@@ -10,3 +10,27 @@ run = ["streamlit", "run", "app.py", "--server.port", "5000"]
 
 [agent]
 integrations = ["python_openai_ai_integrations:1.0.0"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Lever Analyzer"
+
+[[workflows.workflow]]
+name = "Lever Analyzer"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "streamlit run app.py --server.port 5000"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
