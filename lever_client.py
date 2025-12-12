@@ -24,7 +24,7 @@ def fetch_all_postings() -> list[dict]:
     offset = None
     
     while True:
-        params = {"limit": 100}
+        params = {"limit": 100, "mode": "all"}
         if offset:
             params["offset"] = offset
             
