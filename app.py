@@ -33,9 +33,16 @@ if "jd_weight" not in st.session_state:
     st.session_state.jd_weight = 50
 
 lever_api_key = os.environ.get("LEVER_API_KEY", "")
+openai_api_key = os.environ.get("OPENAI_API_KEY", "")
 
+missing_keys = []
 if not lever_api_key:
-    st.error("Missing LEVER_API_KEY. Please add your Lever API key to continue.")
+    missing_keys.append("LEVER_API_KEY")
+if not openai_api_key:
+    missing_keys.append("OPENAI_API_KEY")
+
+if missing_keys:
+    st.error(f"Missing required API keys: {', '.join(missing_keys)}. Please add them to continue.")
     st.stop()
 
 st.markdown("""

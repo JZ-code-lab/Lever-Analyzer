@@ -5,12 +5,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from openai import OpenAI
 
-AI_INTEGRATIONS_OPENAI_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
-AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 openai_client = OpenAI(
-    api_key=AI_INTEGRATIONS_OPENAI_API_KEY,
-    base_url=AI_INTEGRATIONS_OPENAI_BASE_URL
+    api_key=OPENAI_API_KEY
 )
 
 
@@ -97,7 +95,7 @@ Be objective and thorough in your analysis."""
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            max_completion_tokens=2048
+            max_tokens=2048
         )
         return response.choices[0].message.content or "{}"
     
