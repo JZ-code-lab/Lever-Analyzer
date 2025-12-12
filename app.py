@@ -293,19 +293,20 @@ elif st.session_state.current_step == 2:
                 st.rerun()
         
         valid_requirements = [r for r in st.session_state.requirements if r["requirement"].strip()]
+        valid_weight = sum(r["weight"] for r in valid_requirements)
         
         st.markdown("---")
         
         weight_col1, weight_col2 = st.columns([2, 1])
         with weight_col1:
-            st.progress(min(total_weight, 100) / 100)
+            st.progress(min(valid_weight, 100) / 100)
         with weight_col2:
-            if total_weight == 100:
-                st.success(f"✓ {total_weight}%")
-            elif total_weight > 100:
-                st.error(f"⚠ {total_weight}%")
+            if valid_weight == 100:
+                st.success(f"✓ {valid_weight}%")
+            elif valid_weight > 100:
+                st.error(f"⚠ {valid_weight}%")
             else:
-                st.warning(f"{total_weight}%")
+                st.warning(f"{valid_weight}%")
         
         if st.session_state.job_description.strip():
             st.markdown("---")
@@ -328,7 +329,7 @@ elif st.session_state.current_step == 2:
         
         st.markdown("---")
         
-        can_proceed = (valid_requirements and total_weight == 100) or st.session_state.job_description.strip()
+        can_proceed = (valid_requirements and valid_weight == 100) or st.session_state.job_description.strip()
         
         if not can_proceed:
             st.info("Add weighted requirements (totaling 100%) or a job description to continue.")
