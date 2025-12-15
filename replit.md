@@ -4,7 +4,7 @@
 A Python/Streamlit application that integrates with Lever ATS to analyze and rank job candidates using AI-powered resume analysis.
 
 ## Features
-- **Position Selection**: Searchable dropdown with all open and closed Lever positions
+- **Multi-Position Selection**: Select one or more positions to analyze candidates across multiple roles simultaneously
 - **Weighted Requirements**: Define custom requirements with percentage weights for scoring
 - **Optional Job Description**: Add custom job description for additional scoring criteria
 - **Scoring Balance**: Slider to adjust weight between job description vs requirements
@@ -41,4 +41,5 @@ streamlit run app.py --server.port 5000
 - **Rate Limiting**: Automatic retry with exponential backoff for API rate limits
 
 ## Recent Changes
+- December 2024: Added multi-position selection to analyze candidates across multiple roles
 - December 2024: Initial implementation with Lever integration and OpenAI analysis

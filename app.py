@@ -19,8 +19,8 @@ st.set_page_config(
 
 if "postings" not in st.session_state:
     st.session_state.postings = None
-if "selected_posting" not in st.session_state:
-    st.session_state.selected_posting = None
+if "selected_postings" not in st.session_state:
+    st.session_state.selected_postings = []
 if "analysis_results" not in st.session_state:
     st.session_state.analysis_results = None
 if "requirements" not in st.session_state:
@@ -99,11 +99,12 @@ if st.session_state.analysis_results:
     if st.button("← Start New Analysis", type="secondary"):
         st.session_state.analysis_results = None
         st.session_state.current_step = 1
-        st.session_state.selected_posting = None
+        st.session_state.selected_postings = []
         st.rerun()
     
     st.header("📈 Candidate Rankings")
-    st.caption(f"Position: {st.session_state.selected_posting.get('text', 'Unknown')}")
+    position_names = [p.get('text', 'Unknown') for p in st.session_state.selected_postings]
+    st.caption(f"Positions: {', '.join(position_names)}")
     
     results = st.session_state.analysis_results
     
@@ -171,8 +172,8 @@ elif st.session_state.current_step == 1:
     col1, col2, col3 = st.columns([1, 3, 1])
     
     with col2:
-        st.markdown("### Step 1: Select Position")
-        st.caption("Choose a Lever position to analyze candidates")
+        st.markdown("### Step 1: Select Positions")
+        st.caption("Choose one or more Lever positions to analyze candidates across multiple roles")
         
         if st.session_state.postings is None:
             with st.spinner("Loading positions from Lever..."):
@@ -198,27 +199,20 @@ elif st.session_state.current_step == 1:
                 for p in postings
             }
             
-            selected_option = st.selectbox(
-                "Search and select a position",
-                options=[""] + list(posting_options.keys()),
-                help="Start typing to filter positions",
-                label_visibility="collapsed",
-                placeholder="Type to search positions..."
+            selected_options = st.multiselect(
+                "Search and select positions",
+                options=list(posting_options.keys()),
+                help="Select one or more positions to analyze candidates across multiple roles",
+                placeholder="Type to search and select positions..."
             )
             
-            if selected_option:
-                st.session_state.selected_posting = posting_options[selected_option]
-                posting = st.session_state.selected_posting
+            if selected_options:
+                st.session_state.selected_postings = [posting_options[opt] for opt in selected_options]
                 
                 st.markdown("---")
-                st.markdown("**Position Details:**")
-                detail_col1, detail_col2 = st.columns(2)
-                with detail_col1:
-                    st.write(f"**Title:** {posting.get('text', 'N/A')}")
-                    st.write(f"**State:** {posting.get('state', 'N/A')}")
-                with detail_col2:
-                    st.write(f"**Team:** {posting.get('categories', {}).get('team', 'N/A')}")
-                    st.write(f"**Location:** {posting.get('categories', {}).get('location', 'N/A')}")
+                st.markdown(f"**Selected Positions ({len(selected_options)}):**")
+                for posting in st.session_state.selected_postings:
+                    st.write(f"• {posting.get('text', 'N/A')} ({posting.get('state', 'N/A')})")
                 
                 st.markdown("---")
                 st.markdown("**Job Description (Optional)**")
@@ -247,7 +241,11 @@ elif st.session_state.current_step == 2:
             st.rerun()
         
         st.markdown("### Step 2: Define Requirements")
-        st.caption(f"Position: {st.session_state.selected_posting.get('text', 'Unknown')}")
+        position_names = [p.get('text', 'Unknown') for p in st.session_state.selected_postings]
+        if len(position_names) == 1:
+            st.caption(f"Position: {position_names[0]}")
+        else:
+            st.caption(f"Positions: {len(position_names)} selected")
         
         st.markdown("---")
         st.markdown("**Weighted Requirements**")
@@ -335,17 +333,23 @@ elif st.session_state.current_step == 2:
             st.info("Add weighted requirements (totaling 100%) or a job description to continue.")
         
         if st.button("🔍 Analyze Candidates", type="primary", use_container_width=True, disabled=not can_proceed):
-            posting_id = st.session_state.selected_posting.get("id")
+            all_candidates = []
             
             with st.spinner("Fetching candidates from Lever..."):
-                try:
-                    candidates = fetch_candidates_for_posting(posting_id)
-                except Exception as e:
-                    st.error(f"Failed to fetch candidates: {str(e)}")
-                    candidates = []
+                for posting in st.session_state.selected_postings:
+                    posting_id = posting.get("id")
+                    try:
+                        candidates = fetch_candidates_for_posting(posting_id)
+                        for c in candidates:
+                            c["_posting_name"] = posting.get("text", "Unknown")
+                        all_candidates.extend(candidates)
+                    except Exception as e:
+                        st.warning(f"Failed to fetch candidates for {posting.get('text', 'Unknown')}: {str(e)}")
+            
+            candidates = all_candidates
             
             if not candidates:
-                st.warning("No active candidates found for this position.")
+                st.warning("No active candidates found for the selected positions.")
             else:
                 st.info(f"Found {len(candidates)} candidates. Fetching resumes...")
                 
