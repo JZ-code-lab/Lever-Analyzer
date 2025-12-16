@@ -1,6 +1,6 @@
 openai
 pandas
-pdflumber
+pdfplumber
 requests
 streamlit
 tenacity
