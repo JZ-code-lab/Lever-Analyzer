@@ -1,0 +1,6 @@
+openai
+pandas
+pdflumber
+requests
+streamlit
+tenacity
