@@ -4,177 +4,90 @@ from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from openai import OpenAI
+from duckduckgo_search import DDGS
 
-# Using your own OpenAI API key
+# API Key for OpenAI
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-
-openai_client = OpenAI(
-    api_key=OPENAI_API_KEY
-)
-
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 def is_rate_limit_error(exception: BaseException) -> bool:
-    """Check if the exception is a rate limit or quota violation error."""
     error_msg = str(exception)
-    return (
-        "429" in error_msg
-        or "RATELIMIT_EXCEEDED" in error_msg
-        or "quota" in error_msg.lower()
-        or "rate limit" in error_msg.lower()
-        or (hasattr(exception, "status_code") and exception.status_code == 429)
-    )
+    return "429" in error_msg or "rate limit" in error_msg.lower()
 
-
-def analyze_single_resume(
-    resume_text: str,
-    job_description: Optional[str],
-    weighted_requirements: list[dict],
-    jd_weight: float
-) -> dict:
-    """
-    Analyze a single resume against job description and weighted requirements.
-    Returns analysis with score, strengths, and weaknesses.
-    """
+def get_company_research(company_name: str) -> str:
+    """Uses FREE DuckDuckGo to research company industry."""
+    if not company_name or len(company_name) < 2 or company_name.lower() in ["unknown", "none", "n/a"]:
+        return ""
     
-    requirements_str = ""
-    if weighted_requirements:
-        requirements_str = "Weighted Requirements:\n"
-        for req in weighted_requirements:
-            requirements_str += f"- {req['requirement']} (Weight: {req['weight']}%)\n"
+    try:
+        # We use a small 'sleep' or limit workers to avoid being blocked
+        with DDGS() as ddgs:
+            query = f"{company_name} company industry niche"
+            results = list(ddgs.text(query, max_results=1)) # Only 1 result for speed
+            return results[0]['body'] if results else ""
+    except Exception:
+        return ""
+
+def analyze_single_resume(resume_text: str, job_description: Optional[str], weighted_requirements: list[dict], jd_weight: float) -> dict:
+    # --- 1. Extract Top 2 Companies ---
+    try:
+        name_extract = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": f"List the 2 most recent unique employers from this resume. Return ONLY company names separated by a comma.\n\n{resume_text[:1500]}"}]
+        )
+        companies = [c.strip() for c in name_extract.choices[0].message.content.split(",")]
+        
+        # --- 2. Research Them ---
+        research_data = []
+        for co in companies[:2]: # Safety limit to 2
+            info = get_company_research(co)
+            if info:
+                research_data.append(f"{co}: {info}")
+        company_insight = "\n".join(research_data)
+    except:
+        company_insight = "No research available."
+
+    # --- 3. Scoring ---
+    requirements_str = "".join([f"- {r['requirement']} ({r['weight']}%)\n" for r in (weighted_requirements or [])])
+    jd_str = f"Job Description:\n{job_description}\n\n" if job_description else ""
     
-    jd_str = ""
-    if job_description and job_description.strip():
-        jd_str = f"Job Description:\n{job_description}\n\n"
-    
-    scoring_instructions = ""
-    if job_description and job_description.strip() and weighted_requirements:
-        req_weight = 100 - jd_weight
-        scoring_instructions = f"""
-Scoring Breakdown:
-- Job Description Match: {jd_weight}% of total score
-- Weighted Requirements Match: {req_weight}% of total score
+    prompt = f"""Analyze this resume. 
+    COMPANY RESEARCH: {company_insight}
+    {jd_str}{requirements_str}
+    Resume: {resume_text}
+    Return JSON with: overall_score (0-100), strengths, weaknesses, summary."""
 
-For the requirements portion, score each requirement based on how well the candidate meets it,
-then calculate the weighted average using the provided weights.
-"""
-    elif job_description and job_description.strip():
-        scoring_instructions = "Score based entirely on how well the candidate matches the job description."
-    elif weighted_requirements:
-        scoring_instructions = "Score based entirely on the weighted requirements."
-    else:
-        scoring_instructions = "Provide a general assessment of the candidate's qualifications."
-    
-    prompt = f"""Analyze this resume against the provided criteria and provide a detailed assessment.
-
-{jd_str}{requirements_str}
-
-{scoring_instructions}
-
-Resume:
-{resume_text}
-
-Provide your analysis in the following JSON format:
-{{
-    "overall_score": <number between 0 and 100>,
-    "strengths": [<list of 3-5 key strengths>],
-    "weaknesses": [<list of 2-4 areas of concern or gaps>],
-    "requirement_scores": {{<requirement: score for each weighted requirement if applicable>}},
-    "jd_match_score": <score for job description match if applicable>,
-    "summary": "<2-3 sentence summary of the candidate's fit>"
-}}
-
-Be objective and thorough in your analysis."""
-
-    @retry(
-        stop=stop_after_attempt(7),
-        wait=wait_exponential(multiplier=1, min=2, max=128),
-        retry=retry_if_exception(is_rate_limit_error),
-        reraise=True
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception(is_rate_limit_error))
     def call_openai():
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            max_tokens=2048
+            response_format={"type": "json_object"}
         )
         return response.choices[0].message.content or "{}"
     
     try:
-        result = call_openai()
-        return json.loads(result)
-    except Exception as e:
-        return {
-            "overall_score": 0,
-            "strengths": [],
-            "weaknesses": ["Error analyzing resume"],
-            "summary": f"Analysis failed: {str(e)}",
-            "error": True
-        }
+        result = json.loads(call_openai())
+        result["overall_score"] = float(result.get("overall_score") or 0)
+        return result
+    except:
+        return {"overall_score": 0, "summary": "Analysis error", "error": True}
 
-
-def analyze_candidates_batch(
-    candidates_with_resumes: list[dict],
-    job_description: Optional[str],
-    weighted_requirements: list[dict],
-    jd_weight: float,
-    progress_callback=None
-) -> list[dict]:
-    """
-    Analyze multiple candidates concurrently.
-    Each item in candidates_with_resumes should have:
-    - candidate: the candidate dict from Lever
-    - resume_text: the parsed resume text
-    """
-    
+def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_requirements, jd_weight, progress_callback=None):
     results = []
-    total = len(candidates_with_resumes)
-    completed = 0
-    
-    def process_candidate(item: dict) -> dict:
-        candidate = item["candidate"]
-        resume_text = item["resume_text"]
-        
-        analysis = analyze_single_resume(
-            resume_text=resume_text,
-            job_description=job_description,
-            weighted_requirements=weighted_requirements,
-            jd_weight=jd_weight
-        )
-        
-        return {
-            "candidate": candidate,
-            "analysis": analysis
-        }
-    
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {
-            executor.submit(process_candidate, item): i 
-            for i, item in enumerate(candidates_with_resumes)
-        }
-        
+    def process_candidate(item):
+        analysis = analyze_single_resume(item["resume_text"], job_description, weighted_requirements, jd_weight)
+        return {"candidate": item["candidate"], "analysis": analysis}
+
+    # max_workers=3 is safer when doing web searches to avoid being blocked
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(process_candidate, item): i for i, item in enumerate(candidates_with_resumes)}
         for future in as_completed(futures):
             try:
-                result = future.result()
-                results.append(result)
-            except Exception as e:
-                idx = futures[future]
-                candidate = candidates_with_resumes[idx]["candidate"]
-                results.append({
-                    "candidate": candidate,
-                    "analysis": {
-                        "overall_score": 0,
-                        "strengths": [],
-                        "weaknesses": ["Error during analysis"],
-                        "summary": f"Analysis failed: {str(e)}",
-                        "error": True
-                    }
-                })
+                results.append(future.result())
+            except:
+                results.append({"candidate": candidates_with_resumes[futures[future]]["candidate"], "analysis": {"overall_score": 0}})
+            if progress_callback: progress_callback(len(results), len(candidates_with_resumes))
             
-            completed += 1
-            if progress_callback:
-                progress_callback(completed, total)
-    
     results.sort(key=lambda x: x["analysis"].get("overall_score", 0), reverse=True)
-    
     return results
