@@ -5,3 +5,5 @@ requests
 streamlit
 tenacity
 duckduckgo-search
+country-converter
+us

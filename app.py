@@ -10,6 +10,8 @@ from lever_client import (
     get_candidate_lever_url
 )
 from resume_analyzer import analyze_candidates_batch
+from location_utils import filter_candidates_by_location
+from export_utils import export_results_to_csv, filter_results_by_score
 
 st.set_page_config(
     page_title="Lever Analyzer",
@@ -31,6 +33,10 @@ if "job_description" not in st.session_state:
     st.session_state.job_description = ""
 if "jd_weight" not in st.session_state:
     st.session_state.jd_weight = 50
+if "location_filter" not in st.session_state:
+    st.session_state.location_filter = ""
+if "minimum_score" not in st.session_state:
+    st.session_state.minimum_score = 0
 
 lever_api_key = os.environ.get("LEVER_API_KEY", "")
 openai_api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -95,78 +101,157 @@ with col2:
 
 st.divider()
 
+# Sidebar for global filters
+with st.sidebar:
+    st.header("🌍 Filters")
+    st.markdown("---")
+    st.markdown("**Location Filter**")
+    st.caption("Filter candidates by location. Supports countries, US states (full names or abbreviations), and cities.")
+    st.session_state.location_filter = st.text_input(
+        "Location",
+        value=st.session_state.location_filter,
+        placeholder="e.g., California, CA, United States, San Francisco, UK",
+        label_visibility="collapsed",
+        help="Examples: 'California', 'CA', 'United States', 'San Francisco', 'United Kingdom', 'London, UK'"
+    )
+
+    if st.session_state.location_filter:
+        st.info(f"Filtering by: {st.session_state.location_filter}")
+
+    # Minimum score filter (only show when results are available)
+    if st.session_state.analysis_results:
+        st.markdown("---")
+        st.markdown("**Minimum Score**")
+        st.caption("Filter results by minimum score threshold")
+        st.session_state.minimum_score = st.slider(
+            "Minimum Score",
+            min_value=0,
+            max_value=100,
+            value=st.session_state.minimum_score,
+            step=5,
+            label_visibility="collapsed",
+            help="Only show candidates with scores at or above this threshold"
+        )
+
+        if st.session_state.minimum_score > 0:
+            st.info(f"Showing scores ≥ {st.session_state.minimum_score}")
+
 if st.session_state.analysis_results:
     if st.button("← Start New Analysis", type="secondary"):
         st.session_state.analysis_results = None
         st.session_state.current_step = 1
         st.session_state.selected_postings = []
+        st.session_state.minimum_score = 0
         st.rerun()
-    
+
     st.header("📈 Candidate Rankings")
     position_names = [p.get('text', 'Unknown') for p in st.session_state.selected_postings]
     st.caption(f"Positions: {', '.join(position_names)}")
-    
-    results = st.session_state.analysis_results
-    
-    for rank, result in enumerate(results, 1):
-        candidate = result["candidate"]
-        analysis = result["analysis"]
-        
-        score = analysis.get("overall_score", 0)
-        
-        if score >= 80:
-            score_color = "🟢"
-        elif score >= 60:
-            score_color = "🟡"
+
+    # Get all results
+    all_results = st.session_state.analysis_results
+
+    # Filter by minimum score
+    results = filter_results_by_score(all_results, st.session_state.minimum_score)
+
+    # Show filtering info and download button
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        if st.session_state.minimum_score > 0:
+            st.info(f"Showing {len(results)} of {len(all_results)} candidates (score ≥ {st.session_state.minimum_score})")
         else:
-            score_color = "🔴"
-        
-        name = get_candidate_name(candidate)
-        email = get_candidate_email(candidate)
-        linkedin = get_candidate_linkedin(candidate)
-        lever_url = get_candidate_lever_url(candidate)
-        
-        with st.expander(f"#{rank} {score_color} **{name}** - Score: {score}/100", expanded=(rank <= 3)):
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.markdown("**Summary:**")
-                st.write(analysis.get("summary", "No summary available"))
-                
-                st.markdown("**Strengths:**")
-                strengths = analysis.get("strengths", [])
-                for strength in strengths:
-                    st.markdown(f"✅ {strength}")
-                
-                st.markdown("**Weaknesses:**")
-                weaknesses = analysis.get("weaknesses", [])
-                for weakness in weaknesses:
-                    st.markdown(f"⚠️ {weakness}")
-            
-            with col2:
-                st.markdown("**Score Breakdown:**")
-                st.metric("Overall Score", f"{score}/100")
-                
-                if analysis.get("jd_match_score") is not None:
-                    st.write(f"JD Match: {analysis.get('jd_match_score')}/100")
-                
-                req_scores = analysis.get("requirement_scores", {})
-                if req_scores:
-                    st.markdown("**Requirement Scores:**")
-                    for req, req_score in req_scores.items():
-                        display_req = req[:30] + "..." if len(req) > 30 else req
-                        st.write(f"• {display_req}: {req_score}")
-                
-                st.divider()
-                
-                st.markdown("**Links:**")
-                st.markdown(f"[📋 Lever Profile]({lever_url})")
-                
-                if linkedin:
-                    st.markdown(f"[💼 LinkedIn]({linkedin})")
-                
-                if email:
-                    st.write(f"📧 {email}")
+            st.info(f"Showing all {len(results)} candidates")
+
+    with col2:
+        # Download filtered results
+        if results:
+            csv_data = export_results_to_csv(results)
+            st.download_button(
+                label="📥 Download Filtered CSV",
+                data=csv_data,
+                file_name="candidate_analysis_filtered.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    with col3:
+        # Download all results
+        if all_results:
+            csv_data_all = export_results_to_csv(all_results)
+            st.download_button(
+                label="📥 Download All CSV",
+                data=csv_data_all,
+                file_name="candidate_analysis_all.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    st.markdown("---")
+
+    if not results:
+        st.warning(f"No candidates found with score ≥ {st.session_state.minimum_score}. Try adjusting the minimum score filter.")
+    else:
+        # Find original rank from all_results
+        for result in results:
+            original_rank = all_results.index(result) + 1
+            candidate = result["candidate"]
+            analysis = result["analysis"]
+
+            score = analysis.get("overall_score", 0)
+
+            if score >= 80:
+                score_color = "🟢"
+            elif score >= 60:
+                score_color = "🟡"
+            else:
+                score_color = "🔴"
+
+            name = get_candidate_name(candidate)
+            email = get_candidate_email(candidate)
+            linkedin = get_candidate_linkedin(candidate)
+            lever_url = get_candidate_lever_url(candidate)
+
+            with st.expander(f"#{original_rank} {score_color} **{name}** - Score: {score}/100", expanded=(original_rank <= 3)):
+                col1, col2 = st.columns([2, 1])
+
+                with col1:
+                    st.markdown("**Summary:**")
+                    st.write(analysis.get("summary", "No summary available"))
+
+                    st.markdown("**Strengths:**")
+                    strengths = analysis.get("strengths", [])
+                    for strength in strengths:
+                        st.markdown(f"✅ {strength}")
+
+                    st.markdown("**Weaknesses:**")
+                    weaknesses = analysis.get("weaknesses", [])
+                    for weakness in weaknesses:
+                        st.markdown(f"⚠️ {weakness}")
+
+                with col2:
+                    st.markdown("**Score Breakdown:**")
+                    st.metric("Overall Score", f"{score}/100")
+
+                    if analysis.get("jd_match_score") is not None:
+                        st.write(f"JD Match: {analysis.get('jd_match_score')}/100")
+
+                    req_scores = analysis.get("requirement_scores", {})
+                    if req_scores:
+                        st.markdown("**Requirement Scores:**")
+                        for req, req_score in req_scores.items():
+                            display_req = req[:30] + "..." if len(req) > 30 else req
+                            st.write(f"• {display_req}: {req_score}")
+
+                    st.divider()
+
+                    st.markdown("**Links:**")
+                    st.markdown(f"[📋 Lever Profile]({lever_url})")
+
+                    if linkedin:
+                        st.markdown(f"[💼 LinkedIn]({linkedin})")
+
+                    if email:
+                        st.write(f"📧 {email}")
 
 elif st.session_state.current_step == 1:
     col1, col2, col3 = st.columns([1, 3, 1])
@@ -334,7 +419,7 @@ elif st.session_state.current_step == 2:
         
         if st.button("🔍 Analyze Candidates", type="primary", use_container_width=True, disabled=not can_proceed):
             all_candidates = []
-            
+
             with st.spinner("Fetching candidates from Lever..."):
                 for posting in st.session_state.selected_postings:
                     posting_id = posting.get("id")
@@ -345,8 +430,17 @@ elif st.session_state.current_step == 2:
                         all_candidates.extend(candidates)
                     except Exception as e:
                         st.warning(f"Failed to fetch candidates for {posting.get('text', 'Unknown')}: {str(e)}")
-            
+
             candidates = all_candidates
+
+            # Apply location filter if specified
+            if st.session_state.location_filter and st.session_state.location_filter.strip():
+                candidates_before_filter = len(candidates)
+                candidates = filter_candidates_by_location(candidates, st.session_state.location_filter)
+                candidates_after_filter = len(candidates)
+
+                if candidates_before_filter > 0:
+                    st.info(f"Location filter applied: {candidates_after_filter} of {candidates_before_filter} candidates match '{st.session_state.location_filter}'")
             
             if not candidates:
                 st.warning("No active candidates found for the selected positions.")
