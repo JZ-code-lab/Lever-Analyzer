@@ -48,10 +48,10 @@ def fetch_all_postings() -> list[dict]:
 
 
 def fetch_candidates_for_posting(posting_id: str) -> list[dict]:
-    """Fetch all candidates for a specific posting, excluding archived."""
+    """Fetch all candidates for a specific posting, including archived."""
     candidates = []
     offset = None
-    
+
     while True:
         params = {
             "posting_id": posting_id,
@@ -59,26 +59,25 @@ def fetch_candidates_for_posting(posting_id: str) -> list[dict]:
         }
         if offset:
             params["offset"] = offset
-            
+
         response = requests.get(
             f"{LEVER_API_BASE}/opportunities",
             headers=get_auth_header(),
             params=params
         )
-        
+
         if response.status_code != 200:
             raise Exception(f"Failed to fetch candidates: {response.text}")
-        
+
         data = response.json()
-        
-        for candidate in data.get("data", []):
-            if not candidate.get("archived"):
-                candidates.append(candidate)
-        
+
+        # Include all candidates, both active and archived
+        candidates.extend(data.get("data", []))
+
         if not data.get("hasNext"):
             break
         offset = data.get("next")
-    
+
     return candidates
 
 
