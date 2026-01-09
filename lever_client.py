@@ -67,6 +67,8 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
             "posting_id": posting_id,
             "limit": 100
         }
+        if include_archived:
+            params["expand"] = "archived"
         if offset:
             params["offset"] = offset
 
