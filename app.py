@@ -37,6 +37,8 @@ if "location_filter" not in st.session_state:
     st.session_state.location_filter = ""
 if "minimum_score" not in st.session_state:
     st.session_state.minimum_score = 0
+if "include_archived" not in st.session_state:
+    st.session_state.include_archived = False
 
 lever_api_key = os.environ.get("LEVER_API_KEY", "")
 openai_api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -104,6 +106,14 @@ st.divider()
 # Sidebar for global filters
 with st.sidebar:
     st.header("🌍 Filters")
+    st.markdown("---")
+    st.markdown("**Candidate Status**")
+    st.session_state.include_archived = st.checkbox(
+        "Include Archived Candidates",
+        value=st.session_state.include_archived,
+        help="When checked, analysis will include both active and archived candidates. When unchecked, only active (non-archived) candidates will be analyzed."
+    )
+
     st.markdown("---")
     st.markdown("**Location Filter**")
     st.caption("Filter candidates by location. Supports countries, US states (full names or abbreviations), and cities.")
@@ -424,7 +434,7 @@ elif st.session_state.current_step == 2:
                 for posting in st.session_state.selected_postings:
                     posting_id = posting.get("id")
                     try:
-                        candidates = fetch_candidates_for_posting(posting_id)
+                        candidates = fetch_candidates_for_posting(posting_id, st.session_state.include_archived)
                         for c in candidates:
                             c["_posting_name"] = posting.get("text", "Unknown")
                         all_candidates.extend(candidates)
@@ -432,6 +442,14 @@ elif st.session_state.current_step == 2:
                         st.warning(f"Failed to fetch candidates for {posting.get('text', 'Unknown')}: {str(e)}")
 
             candidates = all_candidates
+
+            # Show status of candidate fetching
+            status_msg = f"Found {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}"
+            if st.session_state.include_archived:
+                status_msg += " (including archived)"
+            else:
+                status_msg += " (active only)"
+            st.info(status_msg)
 
             # Apply location filter if specified
             if st.session_state.location_filter and st.session_state.location_filter.strip():
@@ -441,11 +459,12 @@ elif st.session_state.current_step == 2:
 
                 if candidates_before_filter > 0:
                     st.info(f"Location filter applied: {candidates_after_filter} of {candidates_before_filter} candidates match '{st.session_state.location_filter}'")
-            
+
             if not candidates:
-                st.warning("No active candidates found for the selected positions.")
+                candidate_type = "candidates" if st.session_state.include_archived else "active candidates"
+                st.warning(f"No {candidate_type} found for the selected positions.")
             else:
-                st.info(f"Found {len(candidates)} candidates. Fetching resumes...")
+                st.info(f"Fetching resumes for {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}...")
                 
                 candidates_with_resumes = []
                 progress_bar = st.progress(0)

@@ -47,8 +47,18 @@ def fetch_all_postings() -> list[dict]:
     return postings
 
 
-def fetch_candidates_for_posting(posting_id: str) -> list[dict]:
-    """Fetch all candidates for a specific posting, including archived."""
+def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False) -> list[dict]:
+    """
+    Fetch candidates for a specific posting.
+
+    Args:
+        posting_id: The Lever posting ID
+        include_archived: If True, include both active and archived candidates.
+                         If False, only include active (non-archived) candidates.
+
+    Returns:
+        List of candidate dictionaries
+    """
     candidates = []
     offset = None
 
@@ -71,8 +81,10 @@ def fetch_candidates_for_posting(posting_id: str) -> list[dict]:
 
         data = response.json()
 
-        # Include all candidates, both active and archived
-        candidates.extend(data.get("data", []))
+        # Filter based on archived status
+        for candidate in data.get("data", []):
+            if include_archived or not candidate.get("archived"):
+                candidates.append(candidate)
 
         if not data.get("hasNext"):
             break
