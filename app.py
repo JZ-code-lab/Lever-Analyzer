@@ -118,21 +118,16 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**Location Filter**")
-    st.caption("Filter candidates by location(s). Type a location and press Enter or click Add. Supports countries, US states, and cities.")
+    st.caption("Add locations to filter candidates. Press Enter after typing each location.")
 
     # Input box for adding new locations (using form to support Enter key)
     with st.form(key="location_form", clear_on_submit=True):
-        col_input, col_button = st.columns([3, 1])
-        with col_input:
-            new_location = st.text_input(
-                "Add location",
-                value="",
-                placeholder="Type location and press Enter",
-                label_visibility="collapsed",
-                key="new_location_input"
-            )
-        with col_button:
-            submitted = st.form_submit_button("➕ Add", type="primary", use_container_width=True)
+        new_location = st.text_input(
+            "Add location",
+            placeholder="Type location and press Enter",
+            label_visibility="collapsed"
+        )
+        submitted = st.form_submit_button("➕ Add", use_container_width=True)
 
         if submitted and new_location and new_location.strip():
             location_to_add = new_location.strip()
@@ -140,27 +135,20 @@ with st.sidebar:
                 st.session_state.location_filters.append(location_to_add)
                 st.rerun()
 
-    # Display existing location filters as chips/badges
+    # Display existing location filters as a simple list
     if st.session_state.location_filters:
-        st.markdown("**Selected Locations:**")
+        st.markdown(f"**Locations ({len(st.session_state.location_filters)}):**")
 
-        # Create columns for location chips (4 per row)
-        locations_per_row = 4
-        for i in range(0, len(st.session_state.location_filters), locations_per_row):
-            cols = st.columns(locations_per_row)
-            for j, col in enumerate(cols):
-                idx = i + j
-                if idx < len(st.session_state.location_filters):
-                    location = st.session_state.location_filters[idx]
-                    with col:
-                        # Create a button-like chip with X to remove
-                        if st.button(f"❌ {location}", key=f"remove_loc_{idx}", use_container_width=True):
-                            st.session_state.location_filters.pop(idx)
-                            st.rerun()
-
-        st.info(f"Filtering by {len(st.session_state.location_filters)} location(s)")
+        for idx, location in enumerate(st.session_state.location_filters):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.text(location)
+            with col2:
+                if st.button("✕", key=f"remove_loc_{idx}", help=f"Remove {location}"):
+                    st.session_state.location_filters.pop(idx)
+                    st.rerun()
     else:
-        st.caption("No locations selected. Add locations above to filter candidates.")
+        st.caption("No locations added")
 
     # Minimum score filter (only show when results are available)
     if st.session_state.analysis_results:
