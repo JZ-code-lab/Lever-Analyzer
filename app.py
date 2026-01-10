@@ -35,6 +35,8 @@ if "jd_weight" not in st.session_state:
     st.session_state.jd_weight = 50
 if "location_filter" not in st.session_state:
     st.session_state.location_filter = ""
+if "location_filters" not in st.session_state:
+    st.session_state.location_filters = []
 if "minimum_score" not in st.session_state:
     st.session_state.minimum_score = 0
 if "include_archived" not in st.session_state:
@@ -116,24 +118,49 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**Location Filter**")
-    st.caption("Filter candidates by location(s). Enter one location per line. Supports countries, US states, and cities.")
-    st.session_state.location_filter = st.text_area(
-        "Location",
-        value=st.session_state.location_filter,
-        placeholder="California\nNew York\nTexas\n\nPress Enter after each location",
-        label_visibility="collapsed",
-        height=100,
-        help="Enter locations one per line:\n• California\n• New York\n• United Kingdom\n• San Francisco, CA"
-    )
+    st.caption("Filter candidates by location(s). Type a location and press Enter or click Add. Supports countries, US states, and cities.")
 
-    if st.session_state.location_filter:
-        # Show how many locations are being filtered (split by newlines)
-        locations = [loc.strip() for loc in st.session_state.location_filter.split('\n') if loc.strip()]
+    # Input box for adding new locations (using form to support Enter key)
+    with st.form(key="location_form", clear_on_submit=True):
+        col_input, col_button = st.columns([3, 1])
+        with col_input:
+            new_location = st.text_input(
+                "Add location",
+                value="",
+                placeholder="Type location and press Enter",
+                label_visibility="collapsed",
+                key="new_location_input"
+            )
+        with col_button:
+            submitted = st.form_submit_button("➕ Add", type="primary", use_container_width=True)
 
-        if len(locations) > 1:
-            st.info(f"Filtering by {len(locations)} locations: {', '.join(locations)}")
-        else:
-            st.info(f"Filtering by: {st.session_state.location_filter}")
+        if submitted and new_location and new_location.strip():
+            location_to_add = new_location.strip()
+            if location_to_add not in st.session_state.location_filters:
+                st.session_state.location_filters.append(location_to_add)
+                st.rerun()
+
+    # Display existing location filters as chips/badges
+    if st.session_state.location_filters:
+        st.markdown("**Selected Locations:**")
+
+        # Create columns for location chips (4 per row)
+        locations_per_row = 4
+        for i in range(0, len(st.session_state.location_filters), locations_per_row):
+            cols = st.columns(locations_per_row)
+            for j, col in enumerate(cols):
+                idx = i + j
+                if idx < len(st.session_state.location_filters):
+                    location = st.session_state.location_filters[idx]
+                    with col:
+                        # Create a button-like chip with X to remove
+                        if st.button(f"❌ {location}", key=f"remove_loc_{idx}", use_container_width=True):
+                            st.session_state.location_filters.pop(idx)
+                            st.rerun()
+
+        st.info(f"Filtering by {len(st.session_state.location_filters)} location(s)")
+    else:
+        st.caption("No locations selected. Add locations above to filter candidates.")
 
     # Minimum score filter (only show when results are available)
     if st.session_state.analysis_results:
@@ -469,13 +496,16 @@ elif st.session_state.current_step == 2:
             st.info(status_msg)
 
             # Apply location filter if specified
-            if st.session_state.location_filter and st.session_state.location_filter.strip():
+            if st.session_state.location_filters:
                 candidates_before_filter = len(candidates)
-                candidates = filter_candidates_by_location(candidates, st.session_state.location_filter)
+                # Join locations with newlines for the filter function
+                location_filter_string = '\n'.join(st.session_state.location_filters)
+                candidates = filter_candidates_by_location(candidates, location_filter_string)
                 candidates_after_filter = len(candidates)
 
                 if candidates_before_filter > 0:
-                    st.info(f"Location filter applied: {candidates_after_filter} of {candidates_before_filter} candidates match '{st.session_state.location_filter}'")
+                    locations_text = ', '.join(st.session_state.location_filters)
+                    st.info(f"Location filter applied: {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
 
             if not candidates:
                 candidate_type = "candidates" if st.session_state.include_archived else "active candidates"
