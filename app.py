@@ -537,18 +537,29 @@ elif st.session_state.current_step == 2:
                         # Join locations with newlines for the filter function
                         location_filter_string = '\n'.join(st.session_state.location_filters)
 
-                        # Filter using multi-source location detection
-                        candidates_with_resumes = filter_candidates_with_resumes_by_location(
-                            candidates_with_resumes,
-                            location_filter_string
-                        )
+                        # Show progress for location filtering
+                        filter_status = st.empty()
+                        filter_status.text(f"Applying location filter to {candidates_before_filter} candidates...")
 
-                        candidates_after_filter = len(candidates_with_resumes)
-                        locations_text = ', '.join(st.session_state.location_filters)
-                        st.info(f"Location filter applied (checking Lever, resume, and phone): {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
+                        try:
+                            # Filter using multi-source location detection
+                            candidates_with_resumes = filter_candidates_with_resumes_by_location(
+                                candidates_with_resumes,
+                                location_filter_string
+                            )
 
-                        if not candidates_with_resumes:
-                            st.warning(f"No candidates match the location filter: {locations_text}. Try different locations or remove the filter.")
+                            candidates_after_filter = len(candidates_with_resumes)
+                            locations_text = ', '.join(st.session_state.location_filters)
+                            filter_status.empty()
+                            st.info(f"Location filter applied (checking Lever, resume, and phone): {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
+
+                            if not candidates_with_resumes:
+                                st.warning(f"No candidates match the location filter: {locations_text}. Try different locations or remove the filter.")
+                        except Exception as e:
+                            filter_status.empty()
+                            st.error(f"Error applying location filter: {str(e)}")
+                            st.warning("Proceeding without location filter.")
+                            # Continue with all candidates if filtering fails
 
                     if candidates_with_resumes:
                         st.info(f"Analyzing {len(candidates_with_resumes)} candidates with resumes...")
