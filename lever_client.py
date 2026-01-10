@@ -59,81 +59,89 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
     Returns:
         List of candidate dictionaries
     """
+    # Always get active candidates using the posting_id filter (fast)
+    active_candidates = []
+    offset = None
+
+    while True:
+        params = {
+            "posting_id": posting_id,
+            "limit": 100
+        }
+        if offset:
+            params["offset"] = offset
+
+        response = requests.get(
+            f"{LEVER_API_BASE}/opportunities",
+            headers=get_auth_header(),
+            params=params
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch candidates: {response.text}")
+
+        data = response.json()
+        active_candidates.extend(data.get("data", []))
+
+        if not data.get("hasNext"):
+            break
+        offset = data.get("next")
+
     if not include_archived:
-        # Fast path: Use posting_id filter to get only active applications
-        candidates = []
-        offset = None
+        return active_candidates
 
-        while True:
-            params = {
-                "posting_id": posting_id,
-                "limit": 100
-            }
-            if offset:
-                params["offset"] = offset
+    # If include_archived is True, also search for archived candidates
+    # This requires fetching all opportunities since posting_id filter excludes archived applications
+    active_candidate_ids = {c["id"] for c in active_candidates}
+    archived_candidates = []
+    offset = None
+    pages_fetched = 0
+    max_pages = 100  # Safety limit (searches first 10,000 opportunities)
 
-            response = requests.get(
-                f"{LEVER_API_BASE}/opportunities",
-                headers=get_auth_header(),
-                params=params
-            )
+    while pages_fetched < max_pages:
+        params = {
+            "limit": 100,
+            "expand": "applications"
+        }
+        if offset:
+            params["offset"] = offset
 
-            if response.status_code != 200:
-                raise Exception(f"Failed to fetch candidates: {response.text}")
+        response = requests.get(
+            f"{LEVER_API_BASE}/opportunities",
+            headers=get_auth_header(),
+            params=params
+        )
 
-            data = response.json()
-            candidates.extend(data.get("data", []))
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch opportunities: {response.text}")
 
-            if not data.get("hasNext"):
-                break
-            offset = data.get("next")
+        data = response.json()
+        opportunities = data.get("data", [])
 
-        return candidates
+        # Look for archived opportunities with applications to this posting
+        for opp in opportunities:
+            # Skip if we already have this candidate from active list
+            if opp["id"] in active_candidate_ids:
+                continue
 
-    else:
-        # Slow path: Fetch all opportunities and filter for applications to this posting
-        # This is necessary because posting_id filter excludes archived applications
-        # Note: This fetches ALL opportunities which can be slow for large databases
-        all_opportunities = []
-        offset = None
-        pages_fetched = 0
-        max_pages = 100  # Safety limit to prevent excessive API calls
+            # Only interested in archived opportunities
+            if not opp.get("archived"):
+                continue
 
-        while pages_fetched < max_pages:
-            params = {
-                "limit": 100,
-                "expand": "applications"
-            }
-            if offset:
-                params["offset"] = offset
-
-            response = requests.get(
-                f"{LEVER_API_BASE}/opportunities",
-                headers=get_auth_header(),
-                params=params
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to fetch opportunities: {response.text}")
-
-            data = response.json()
-            all_opportunities.extend(data.get("data", []))
-            pages_fetched += 1
-
-            if not data.get("hasNext"):
-                break
-            offset = data.get("next")
-
-        # Filter for opportunities that have applications (active or archived) for this posting
-        candidates = []
-        for opp in all_opportunities:
+            # Check if this archived opportunity has an application to our posting
             applications = opp.get("applications", [])
             for app in applications:
                 if isinstance(app, dict) and app.get("posting") == posting_id:
-                    candidates.append(opp)
-                    break  # Count each opportunity only once
+                    archived_candidates.append(opp)
+                    break
 
-        return candidates
+        pages_fetched += 1
+        if not data.get("hasNext"):
+            break
+        offset = data.get("next")
+
+    # Combine active and archived candidates
+    return active_candidates + archived_candidates
 
 
 def fetch_candidate_resumes(opportunity_id: str) -> list[dict]:
