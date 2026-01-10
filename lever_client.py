@@ -59,7 +59,7 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
     Returns:
         List of candidate dictionaries
     """
-    # Always get active candidates using the posting_id filter (fast)
+    # Get active candidates using the posting_id filter
     active_candidates = []
     offset = None
 
@@ -90,18 +90,16 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
     if not include_archived:
         return active_candidates
 
-    # If include_archived is True, also search for archived candidates
-    # This requires fetching all opportunities since posting_id filter excludes archived applications
-    active_candidate_ids = {c["id"] for c in active_candidates}
+    # Get archived candidates by using both posting_id and archived_posting_id parameters
+    # This returns only archived candidates for this specific posting
     archived_candidates = []
     offset = None
-    pages_fetched = 0
-    max_pages = 100  # Safety limit (searches first 10,000 opportunities)
 
-    while pages_fetched < max_pages:
+    while True:
         params = {
-            "limit": 100,
-            "expand": "applications"
+            "posting_id": posting_id,
+            "archived_posting_id": posting_id,
+            "limit": 100
         }
         if offset:
             params["offset"] = offset
@@ -113,29 +111,11 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
         )
 
         if response.status_code != 200:
-            raise Exception(f"Failed to fetch opportunities: {response.text}")
+            raise Exception(f"Failed to fetch archived candidates: {response.text}")
 
         data = response.json()
-        opportunities = data.get("data", [])
+        archived_candidates.extend(data.get("data", []))
 
-        # Look for archived opportunities with applications to this posting
-        for opp in opportunities:
-            # Skip if we already have this candidate from active list
-            if opp["id"] in active_candidate_ids:
-                continue
-
-            # Only interested in archived opportunities
-            if not opp.get("archived"):
-                continue
-
-            # Check if this archived opportunity has an application to our posting
-            applications = opp.get("applications", [])
-            for app in applications:
-                if isinstance(app, dict) and app.get("posting") == posting_id:
-                    archived_candidates.append(opp)
-                    break
-
-        pages_fetched += 1
         if not data.get("hasNext"):
             break
         offset = data.get("next")
