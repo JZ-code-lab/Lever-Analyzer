@@ -45,8 +45,35 @@ REGION_MAPPINGS = {
         "tustin", "lake forest", "yorba linda", "laguna niguel"
     ],
     "greater seattle": [
-        "seattle", "bellevue", "redmond", "tacoma", "everett", "kent",
-        "renton", "spokane", "bellingham", "kirkland", "sammamish"
+        # Seattle proper
+        "seattle",
+        # Eastside (King County)
+        "bellevue", "redmond", "kirkland", "sammamish", "issaquah",
+        "mercer island", "newcastle", "woodinville", "bothell", "kenmore",
+        "lake forest park", "shoreline", "mountlake terrace", "brier",
+        # South King County
+        "renton", "kent", "auburn", "federal way", "tukwila", "seatac",
+        "burien", "des moines", "covington", "maple valley", "enumclaw",
+        # North (Snohomish County)
+        "everett", "lynnwood", "edmonds", "mukilteo", "mill creek",
+        "marysville", "lake stevens", "snohomish", "monroe", "arlington",
+        # South Sound (Pierce County)
+        "tacoma", "lakewood", "puyallup", "university place", "bonney lake",
+        "sumner", "edgewood", "fife", "gig harbor", "dupont", "steilacoom",
+        # West (Kitsap County - across Puget Sound)
+        "bremerton", "silverdale", "poulsbo", "port orchard", "bainbridge island"
+    ],
+    "seattle metro": [  # Alias
+        "seattle", "bellevue", "redmond", "kirkland", "sammamish", "issaquah",
+        "mercer island", "newcastle", "woodinville", "bothell", "kenmore",
+        "lake forest park", "shoreline", "mountlake terrace", "brier",
+        "renton", "kent", "auburn", "federal way", "tukwila", "seatac",
+        "burien", "des moines", "covington", "maple valley", "enumclaw",
+        "everett", "lynnwood", "edmonds", "mukilteo", "mill creek",
+        "marysville", "lake stevens", "snohomish", "monroe", "arlington",
+        "tacoma", "lakewood", "puyallup", "university place", "bonney lake",
+        "sumner", "edgewood", "fife", "gig harbor", "dupont", "steilacoom",
+        "bremerton", "silverdale", "poulsbo", "port orchard", "bainbridge island"
     ],
     "greater boston": [
         "boston", "cambridge", "somerville", "brookline", "newton", "quincy",
