@@ -6,11 +6,28 @@ import us
 # Region mappings for common geographic areas
 REGION_MAPPINGS = {
     "bay area": [
-        "san francisco", "oakland", "san jose", "berkeley", "palo alto",
-        "mountain view", "sunnyvale", "fremont", "hayward", "santa clara",
-        "redwood city", "san mateo", "daly city", "south san francisco",
-        "cupertino", "milpitas", "alameda", "san leandro", "pleasanton",
-        "livermore", "richmond", "vallejo", "antioch", "concord", "walnut creek"
+        # San Francisco Peninsula
+        "san francisco", "daly city", "south san francisco", "san bruno",
+        "millbrae", "burlingame", "san mateo", "foster city", "belmont",
+        "san carlos", "redwood city", "menlo park", "palo alto",
+        # East Bay
+        "oakland", "berkeley", "alameda", "emeryville", "albany",
+        "el cerrito", "richmond", "san pablo", "pinole", "hercules",
+        "martinez", "concord", "walnut creek", "pleasant hill", "clayton",
+        "danville", "san ramon", "dublin", "pleasanton", "livermore",
+        "fremont", "newark", "union city", "hayward", "san leandro",
+        "castro valley", "san lorenzo",
+        # South Bay / Silicon Valley
+        "san jose", "santa clara", "sunnyvale", "mountain view", "los altos",
+        "cupertino", "saratoga", "campbell", "los gatos", "monte sereno",
+        "milpitas", "santa teresa", "willow glen",
+        # North Bay
+        "san rafael", "novato", "petaluma", "santa rosa", "rohnert park",
+        "cotati", "sebastopol", "healdsburg", "windsor", "cloverdale",
+        "vallejo", "benicia", "fairfield", "vacaville", "suisun city",
+        "napa", "american canyon", "st helena", "calistoga", "yountville",
+        "sausalito", "mill valley", "tiburon", "corte madera", "larkspur",
+        "san anselmo", "fairfax"
     ],
     "silicon valley": [
         "san jose", "palo alto", "mountain view", "sunnyvale", "santa clara",
