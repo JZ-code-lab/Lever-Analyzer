@@ -83,6 +83,17 @@ st.markdown("""
     .stButton > button {
         width: 100%;
     }
+    /* Hide location remove button by default, show on hover */
+    .location-item {
+        position: relative;
+    }
+    .location-item .stButton {
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .location-item:hover .stButton {
+        opacity: 1;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -140,6 +151,8 @@ with st.sidebar:
         st.markdown(f"**Locations ({len(st.session_state.location_filters)}):**")
 
         for idx, location in enumerate(st.session_state.location_filters):
+            # Wrap in a container div for hover effect
+            st.markdown(f'<div class="location-item">', unsafe_allow_html=True)
             col1, col2 = st.columns([4, 1])
             with col1:
                 st.text(location)
@@ -147,6 +160,7 @@ with st.sidebar:
                 if st.button("✕", key=f"remove_loc_{idx}", help=f"Remove {location}"):
                     st.session_state.location_filters.pop(idx)
                     st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.caption("No locations added")
 

@@ -3,6 +3,122 @@ from typing import Optional
 import country_converter as coco
 import us
 
+# Region mappings for common geographic areas
+REGION_MAPPINGS = {
+    "bay area": [
+        "san francisco", "oakland", "san jose", "berkeley", "palo alto",
+        "mountain view", "sunnyvale", "fremont", "hayward", "santa clara",
+        "redwood city", "san mateo", "daly city", "south san francisco",
+        "cupertino", "milpitas", "alameda", "san leandro", "pleasanton",
+        "livermore", "richmond", "vallejo", "antioch", "concord", "walnut creek"
+    ],
+    "silicon valley": [
+        "san jose", "palo alto", "mountain view", "sunnyvale", "santa clara",
+        "cupertino", "milpitas", "los altos", "redwood city", "menlo park",
+        "campbell", "saratoga", "los gatos"
+    ],
+    "greater los angeles": [
+        "los angeles", "santa monica", "pasadena", "glendale", "burbank",
+        "long beach", "anaheim", "irvine", "santa ana", "torrance",
+        "inglewood", "el segundo", "culver city", "beverly hills"
+    ],
+    "orange county": [
+        "santa ana", "anaheim", "irvine", "huntington beach", "garden grove",
+        "orange", "fullerton", "costa mesa", "mission viejo", "newport beach",
+        "tustin", "lake forest", "yorba linda", "laguna niguel"
+    ],
+    "greater seattle": [
+        "seattle", "bellevue", "redmond", "tacoma", "everett", "kent",
+        "renton", "spokane", "bellingham", "kirkland", "sammamish"
+    ],
+    "greater boston": [
+        "boston", "cambridge", "somerville", "brookline", "newton", "quincy",
+        "waltham", "framingham", "malden", "medford", "lynn", "arlington"
+    ],
+    "dmv": [  # DC-Maryland-Virginia
+        "washington", "arlington", "alexandria", "bethesda", "silver spring",
+        "rockville", "falls church", "tysons", "mclean", "reston", "fairfax"
+    ],
+    "nyc metro": [  # New York City Metro area - includes NJ
+        "new york", "brooklyn", "manhattan", "queens", "bronx", "staten island",
+        "newark", "jersey city", "hoboken", "weehawken", "edgewater",
+        "fort lee", "hackensack", "paterson", "elizabeth", "bayonne",
+        "yonkers", "white plains", "new rochelle", "mount vernon"
+    ],
+    "new york metro": [  # Alias for NYC metro
+        "new york", "brooklyn", "manhattan", "queens", "bronx", "staten island",
+        "newark", "jersey city", "hoboken", "weehawken", "edgewater",
+        "fort lee", "hackensack", "paterson", "elizabeth", "bayonne",
+        "yonkers", "white plains", "new rochelle", "mount vernon"
+    ],
+    "tri-state": [  # NY-NJ-CT area
+        "new york", "newark", "jersey city", "yonkers", "bridgeport",
+        "stamford", "white plains", "hoboken", "paterson", "new haven",
+        "norwalk", "danbury"
+    ],
+    "chicago metro": [
+        "chicago", "naperville", "aurora", "joliet", "rockford", "elgin",
+        "cicero", "arlington heights", "evanston", "schaumburg", "bolingbrook"
+    ],
+    "dallas metro": [
+        "dallas", "fort worth", "arlington", "plano", "irving", "garland",
+        "frisco", "mckinney", "richardson", "carrollton", "denton"
+    ],
+    "houston metro": [
+        "houston", "sugar land", "the woodlands", "pearland", "league city",
+        "baytown", "missouri city", "texas city", "pasadena", "conroe"
+    ],
+    "atlanta metro": [
+        "atlanta", "sandy springs", "roswell", "marietta", "johns creek",
+        "alpharetta", "smyrna", "dunwoody", "brookhaven", "peachtree city"
+    ],
+    "phoenix metro": [
+        "phoenix", "mesa", "chandler", "scottsdale", "glendale", "gilbert",
+        "tempe", "peoria", "surprise", "avondale", "goodyear"
+    ],
+    "philadelphia metro": [
+        "philadelphia", "camden", "wilmington", "cherry hill", "trenton",
+        "bensalem", "gloucester", "king of prussia", "norristown"
+    ],
+    "miami metro": [
+        "miami", "fort lauderdale", "west palm beach", "hialeah", "boca raton",
+        "miami beach", "coral springs", "pembroke pines", "hollywood", "doral"
+    ],
+    "denver metro": [
+        "denver", "aurora", "lakewood", "centennial", "boulder", "arvada",
+        "westminster", "thornton", "broomfield", "longmont", "castle rock"
+    ],
+    "portland metro": [
+        "portland", "vancouver", "gresham", "hillsboro", "beaverton", "bend",
+        "salem", "eugene", "tigard", "lake oswego"
+    ],
+    "austin metro": [
+        "austin", "round rock", "georgetown", "pflugerville", "cedar park",
+        "san marcos", "kyle", "buda", "leander", "hutto"
+    ]
+}
+
+
+def expand_region(location: str) -> list[str]:
+    """
+    Expand a region name into its constituent cities.
+
+    Args:
+        location: Location string that might be a region name
+
+    Returns:
+        List of cities in the region, or [location] if not a recognized region
+    """
+    location_lower = location.lower().strip()
+
+    # Check if this is a known region
+    for region_name, cities in REGION_MAPPINGS.items():
+        if region_name in location_lower:
+            return cities
+
+    # Not a region, return as-is
+    return [location]
+
 
 def normalize_location(location: str) -> dict:
     """
@@ -78,9 +194,10 @@ def normalize_location(location: str) -> dict:
     return result
 
 
-def locations_match(location1: str, location2: str) -> bool:
+def locations_match(location1: str, location2: str, _expanded: bool = False) -> bool:
     """
     Check if two location strings match, accounting for:
+    - Regional areas (e.g., "Bay Area" matches "San Francisco", "Oakland", etc.)
     - US state names vs abbreviations
     - Country name variations
     - Partial city matches
@@ -88,6 +205,18 @@ def locations_match(location1: str, location2: str) -> bool:
     """
     if not location1 or not location2:
         return False
+
+    # Check if location1 is a region - if so, expand it to cities
+    # Only do this on first call to avoid infinite recursion
+    if not _expanded:
+        expanded_locations = expand_region(location1)
+
+        # If location1 was expanded to multiple cities, check if location2 matches any of them
+        if len(expanded_locations) > 1:
+            for city in expanded_locations:
+                if locations_match(city, location2, _expanded=True):
+                    return True
+            # If no city matched, fall through to try matching the original region name
 
     # Normalize both locations
     norm1 = normalize_location(location1)
