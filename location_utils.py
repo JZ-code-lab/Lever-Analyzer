@@ -4,6 +4,10 @@ import country_converter as coco
 import us
 import phonenumbers
 from phonenumbers import geocoder
+import logging
+
+# Suppress country_converter warnings/errors
+logging.getLogger('country_converter').setLevel(logging.CRITICAL)
 
 # Region mappings for common geographic areas
 REGION_MAPPINGS = {
@@ -218,15 +222,17 @@ def normalize_location(location: str) -> dict:
             result["country_code"] = "USA"
             continue
 
-        # Check if it's a country
-        try:
-            country_name = cc.convert(part, to='name_short')
-            if country_name and country_name != 'not found':
-                result["country"] = country_name
-                result["country_code"] = cc.convert(part, to='ISO3')
-                continue
-        except:
-            pass
+        # Check if it's a country (skip obvious non-countries)
+        # Only check if it's a reasonable country name (no spaces, not a common US city)
+        if ' ' not in part and part.lower() not in ['san', 'los', 'new', 'fort', 'saint', 'mount']:
+            try:
+                country_name = cc.convert(part, to='name_short')
+                if country_name and country_name != 'not found':
+                    result["country"] = country_name
+                    result["country_code"] = cc.convert(part, to='ISO3')
+                    continue
+            except Exception:
+                pass
 
         # If not a state or country, assume it's a city
         if not result["city"]:
