@@ -2,6 +2,8 @@ import re
 from typing import Optional
 import country_converter as coco
 import us
+import phonenumbers
+from phonenumbers import geocoder
 
 # Region mappings for common geographic areas
 REGION_MAPPINGS = {
@@ -319,15 +321,202 @@ def locations_match(location1: str, location2: str, _expanded: bool = False) -> 
     return False
 
 
-def filter_candidates_by_location(candidates: list[dict], location_filter: str) -> list[dict]:
+def extract_phone_numbers(text: str) -> list[str]:
     """
-    Filter a list of candidates by location(s).
+    Extract phone numbers from text.
+
+    Args:
+        text: Text that may contain phone numbers
+
+    Returns:
+        List of phone numbers found (as strings)
+    """
+    if not text:
+        return []
+
+    phone_numbers = []
+
+    # Common phone number patterns
+    patterns = [
+        r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',  # 123-456-7890 or 1234567890
+        r'\(\d{3}\)\s*\d{3}[-.]?\d{4}',     # (123) 456-7890
+        r'\+1[-.\s]?\d{3}[-.\s]?\d{3}[-.\s]?\d{4}',  # +1-123-456-7890
+    ]
+
+    for pattern in patterns:
+        matches = re.findall(pattern, text)
+        phone_numbers.extend(matches)
+
+    return phone_numbers
+
+
+def get_location_from_phone_number(phone_number: str) -> Optional[str]:
+    """
+    Infer location from phone number area code.
+
+    Args:
+        phone_number: Phone number string
+
+    Returns:
+        Location string (city, state) or None if unable to determine
+    """
+    if not phone_number:
+        return None
+
+    try:
+        # Clean the phone number
+        phone_clean = re.sub(r'[^\d+]', '', phone_number)
+
+        # If it doesn't start with +, assume US and add +1
+        if not phone_clean.startswith('+'):
+            phone_clean = '+1' + phone_clean
+
+        # Parse the phone number
+        parsed = phonenumbers.parse(phone_clean, None)
+
+        # Get the location description
+        location = geocoder.description_for_number(parsed, "en")
+
+        if location:
+            return location
+
+    except Exception:
+        pass
+
+    return None
+
+
+def extract_location_from_resume(resume_text: str) -> Optional[str]:
+    """
+    Extract location from resume text.
+    Looks for:
+    1. Explicit location patterns (City, State format)
+    2. Addresses with city/state/zip
+    3. Company locations
+
+    Args:
+        resume_text: The full resume text
+
+    Returns:
+        Location string if found, None otherwise
+    """
+    if not resume_text:
+        return None
+
+    # Pattern 1: City, State (full name or abbreviation) with optional ZIP
+    # Examples: "San Francisco, CA", "New York, New York 10001"
+    city_state_pattern = r'\b([A-Z][a-zA-Z\s]+),\s*([A-Z]{2}|[A-Z][a-zA-Z\s]+)(?:\s+\d{5})?\b'
+
+    matches = re.findall(city_state_pattern, resume_text)
+
+    if matches:
+        # Return the first match, which is usually the candidate's location
+        # (typically at the top of resume)
+        city, state = matches[0]
+        return f"{city.strip()}, {state.strip()}"
+
+    # Pattern 2: Look for location keywords followed by city/state
+    # Examples: "Location: San Francisco, CA", "Based in Seattle, WA"
+    location_keyword_pattern = r'(?:Location|Based in|Residing in|Address):\s*([A-Z][a-zA-Z\s]+,\s*[A-Z]{2})'
+
+    keyword_match = re.search(location_keyword_pattern, resume_text, re.IGNORECASE)
+    if keyword_match:
+        return keyword_match.group(1).strip()
+
+    return None
+
+
+def get_candidate_location_multi_source(candidate: dict, resume_text: Optional[str] = None) -> Optional[str]:
+    """
+    Get candidate location from multiple sources in priority order:
+    1. Lever location field
+    2. Resume text (extracted location)
+    3. Phone number area code
+
+    Args:
+        candidate: Candidate dictionary from Lever API
+        resume_text: Optional resume text
+
+    Returns:
+        Location string or None
+    """
+    # Source 1: Lever location field
+    candidate_location = None
+
+    if "location" in candidate and candidate["location"]:
+        candidate_location = candidate["location"]
+    elif "locations" in candidate and candidate["locations"]:
+        locations = candidate["locations"]
+        if isinstance(locations, list) and locations:
+            candidate_location = locations[0]
+        else:
+            candidate_location = locations
+
+    # Check contact field with location
+    if not candidate_location:
+        contact = candidate.get("contact", {})
+        if isinstance(contact, dict):
+            candidate_location = contact.get("location")
+
+    # Convert to string if needed
+    if candidate_location and not isinstance(candidate_location, str):
+        candidate_location = str(candidate_location)
+
+    if candidate_location and candidate_location.strip():
+        return candidate_location.strip()
+
+    # Source 2: Resume text
+    if resume_text:
+        resume_location = extract_location_from_resume(resume_text)
+        if resume_location:
+            return resume_location
+
+    # Source 3: Phone number area code
+    # Check Lever data for phone numbers
+    phone_numbers = []
+
+    # Get phones from candidate data
+    if "phones" in candidate:
+        phones = candidate["phones"]
+        if isinstance(phones, list):
+            for phone_obj in phones:
+                if isinstance(phone_obj, dict):
+                    phone_numbers.append(phone_obj.get("value", ""))
+                else:
+                    phone_numbers.append(str(phone_obj))
+        elif phones:
+            phone_numbers.append(str(phones))
+
+    # Also check contact field
+    contact = candidate.get("contact", {})
+    if isinstance(contact, dict) and "phone" in contact:
+        phone_numbers.append(str(contact["phone"]))
+
+    # Extract phones from resume text
+    if resume_text:
+        resume_phones = extract_phone_numbers(resume_text)
+        phone_numbers.extend(resume_phones)
+
+    # Try to get location from first valid phone number
+    for phone in phone_numbers:
+        if phone and phone.strip():
+            location = get_location_from_phone_number(phone.strip())
+            if location:
+                return location
+
+    return None
+
+
+def filter_candidates_by_location(candidates: list[dict], location_filter: str, resume_texts: Optional[dict] = None) -> list[dict]:
+    """
+    Filter a list of candidates by location(s) using multi-source detection.
 
     Args:
         candidates: List of candidate dictionaries from Lever API
         location_filter: Location string(s) to filter by.
                         Can be a single location or multiple locations separated by newlines.
                         Examples: "California", "California\nNew York\nTexas"
+        resume_texts: Optional dict mapping candidate IDs to resume text for enhanced location detection
 
     Returns:
         Filtered list of candidates matching any of the specified locations
@@ -343,31 +532,13 @@ def filter_candidates_by_location(candidates: list[dict], location_filter: str) 
     filtered = []
 
     for candidate in candidates:
-        # Get candidate location from Lever data
-        # Lever stores location in different possible fields
-        candidate_location = None
+        # Get resume text if available
+        resume_text = None
+        if resume_texts and candidate.get("id") in resume_texts:
+            resume_text = resume_texts[candidate["id"]]
 
-        # Check common location fields
-        if "location" in candidate and candidate["location"]:
-            candidate_location = candidate["location"]
-        elif "locations" in candidate and candidate["locations"]:
-            # Some APIs return an array of locations
-            locations = candidate["locations"]
-            if isinstance(locations, list) and locations:
-                candidate_location = locations[0]
-            else:
-                candidate_location = locations
-
-        # If no location field, check if it's in other fields
-        if not candidate_location:
-            # Check if there's a contact field with location
-            contact = candidate.get("contact", {})
-            if isinstance(contact, dict):
-                candidate_location = contact.get("location")
-
-        # Convert to string if needed
-        if candidate_location and not isinstance(candidate_location, str):
-            candidate_location = str(candidate_location)
+        # Use multi-source location detection (Lever field, resume, phone)
+        candidate_location = get_candidate_location_multi_source(candidate, resume_text)
 
         # If candidate has a location, check if it matches ANY of the filters
         if candidate_location:
@@ -376,7 +547,46 @@ def filter_candidates_by_location(candidates: list[dict], location_filter: str) 
                 if locations_match(filter_loc, candidate_location):
                     filtered.append(candidate)
                     break  # Don't add the same candidate multiple times
-        # If no location data, we might want to include them (configurable)
-        # For now, we exclude candidates without location data
+        # If no location data found from any source, exclude the candidate
+
+    return filtered
+
+
+def filter_candidates_with_resumes_by_location(candidates_with_resumes: list[dict], location_filter: str) -> list[dict]:
+    """
+    Filter candidates_with_resumes by location using multi-source detection.
+
+    Args:
+        candidates_with_resumes: List of dicts with 'candidate' and 'resume_text' keys
+        location_filter: Location string(s) to filter by (newline-separated)
+
+    Returns:
+        Filtered list of candidates_with_resumes matching any of the specified locations
+    """
+    if not location_filter or not location_filter.strip():
+        return candidates_with_resumes
+
+    location_filter = location_filter.strip()
+
+    # Split by newlines to support multiple locations (one per line)
+    location_filters = [loc.strip() for loc in location_filter.split('\n') if loc.strip()]
+
+    filtered = []
+
+    for item in candidates_with_resumes:
+        candidate = item["candidate"]
+        resume_text = item.get("resume_text")
+
+        # Use multi-source location detection (Lever field, resume, phone)
+        candidate_location = get_candidate_location_multi_source(candidate, resume_text)
+
+        # If candidate has a location, check if it matches ANY of the filters
+        if candidate_location:
+            for filter_loc in location_filters:
+                # Important: filter_loc must be first parameter so regions get expanded correctly
+                if locations_match(filter_loc, candidate_location):
+                    filtered.append(item)
+                    break  # Don't add the same item multiple times
+        # If no location data found from any source, exclude the candidate
 
     return filtered

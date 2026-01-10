@@ -10,7 +10,7 @@ from lever_client import (
     get_candidate_lever_url
 )
 from resume_analyzer import analyze_candidates_batch
-from location_utils import filter_candidates_by_location
+from location_utils import filter_candidates_with_resumes_by_location
 from export_utils import export_results_to_csv, filter_results_by_score
 
 st.set_page_config(
@@ -530,25 +530,22 @@ elif st.session_state.current_step == 2:
                     st.warning("No resumes found for any candidates.")
                 else:
                     # Apply location filter if specified (after fetching resumes)
+                    # Uses multi-source detection: 1) Lever field, 2) Resume text, 3) Phone area code
                     if st.session_state.location_filters:
                         candidates_before_filter = len(candidates_with_resumes)
-                        # Extract just the candidate objects for filtering
-                        candidate_objects = [c["candidate"] for c in candidates_with_resumes]
 
                         # Join locations with newlines for the filter function
                         location_filter_string = '\n'.join(st.session_state.location_filters)
-                        filtered_candidates = filter_candidates_by_location(candidate_objects, location_filter_string)
 
-                        # Keep only the candidates_with_resumes entries that match
-                        filtered_candidate_ids = {c["id"] for c in filtered_candidates}
-                        candidates_with_resumes = [
-                            c for c in candidates_with_resumes
-                            if c["candidate"]["id"] in filtered_candidate_ids
-                        ]
+                        # Filter using multi-source location detection
+                        candidates_with_resumes = filter_candidates_with_resumes_by_location(
+                            candidates_with_resumes,
+                            location_filter_string
+                        )
 
                         candidates_after_filter = len(candidates_with_resumes)
                         locations_text = ', '.join(st.session_state.location_filters)
-                        st.info(f"Location filter applied: {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
+                        st.info(f"Location filter applied (checking Lever, resume, and phone): {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
 
                         if not candidates_with_resumes:
                             st.warning(f"No candidates match the location filter: {locations_text}. Try different locations or remove the filter.")

@@ -7,3 +7,4 @@ tenacity
 duckduckgo-search
 country-converter
 us
+phonenumbers
