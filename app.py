@@ -116,17 +116,24 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**Location Filter**")
-    st.caption("Filter candidates by location. Supports countries, US states (full names or abbreviations), and cities.")
-    st.session_state.location_filter = st.text_input(
+    st.caption("Filter candidates by location(s). Enter one location per line. Supports countries, US states, and cities.")
+    st.session_state.location_filter = st.text_area(
         "Location",
         value=st.session_state.location_filter,
-        placeholder="e.g., California, CA, United States, San Francisco, UK",
+        placeholder="California\nNew York\nTexas\n\nPress Enter after each location",
         label_visibility="collapsed",
-        help="Examples: 'California', 'CA', 'United States', 'San Francisco', 'United Kingdom', 'London, UK'"
+        height=100,
+        help="Enter locations one per line:\n• California\n• New York\n• United Kingdom\n• San Francisco, CA"
     )
 
     if st.session_state.location_filter:
-        st.info(f"Filtering by: {st.session_state.location_filter}")
+        # Show how many locations are being filtered (split by newlines)
+        locations = [loc.strip() for loc in st.session_state.location_filter.split('\n') if loc.strip()]
+
+        if len(locations) > 1:
+            st.info(f"Filtering by {len(locations)} locations: {', '.join(locations)}")
+        else:
+            st.info(f"Filtering by: {st.session_state.location_filter}")
 
     # Minimum score filter (only show when results are available)
     if st.session_state.analysis_results:

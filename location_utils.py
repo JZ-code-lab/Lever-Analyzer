@@ -148,19 +148,25 @@ def locations_match(location1: str, location2: str) -> bool:
 
 def filter_candidates_by_location(candidates: list[dict], location_filter: str) -> list[dict]:
     """
-    Filter a list of candidates by location.
+    Filter a list of candidates by location(s).
 
     Args:
         candidates: List of candidate dictionaries from Lever API
-        location_filter: Location string to filter by
+        location_filter: Location string(s) to filter by.
+                        Can be a single location or multiple locations separated by newlines.
+                        Examples: "California", "California\nNew York\nTexas"
 
     Returns:
-        Filtered list of candidates matching the location
+        Filtered list of candidates matching any of the specified locations
     """
     if not location_filter or not location_filter.strip():
         return candidates
 
     location_filter = location_filter.strip()
+
+    # Split by newlines to support multiple locations (one per line)
+    location_filters = [loc.strip() for loc in location_filter.split('\n') if loc.strip()]
+
     filtered = []
 
     for candidate in candidates:
@@ -190,10 +196,12 @@ def filter_candidates_by_location(candidates: list[dict], location_filter: str) 
         if candidate_location and not isinstance(candidate_location, str):
             candidate_location = str(candidate_location)
 
-        # If candidate has a location, check if it matches
+        # If candidate has a location, check if it matches ANY of the filters
         if candidate_location:
-            if locations_match(candidate_location, location_filter):
-                filtered.append(candidate)
+            for filter_loc in location_filters:
+                if locations_match(candidate_location, filter_loc):
+                    filtered.append(candidate)
+                    break  # Don't add the same candidate multiple times
         # If no location data, we might want to include them (configurable)
         # For now, we exclude candidates without location data
 
