@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(env)",
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "Bash(python test_location_filter.py:*)",
+      "Bash(pip install:*)",
+      "Bash(python test_csv_export.py:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd global location filter and CSV export with score filtering\n\n- Implemented location filter supporting US states \\(full names and abbreviations\\), countries, and cities using country-converter and us libraries\n- Added minimum score filter \\(0-100, intervals of 5\\) with dynamic UI updates\n- Created CSV export functionality with Excel HYPERLINK formulas for clickable Lever and LinkedIn profile links\n- Added two download options: filtered results and all results\n- Location normalization handles partial matches and international locations\n- All changes portable for Render deployment\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(python test_archived_filter.py:*)",
+      "Bash(python test_api_params.py:*)",
+      "Bash(python:*)",
+      "WebSearch",
+      "WebFetch(domain:hire.lever.co)"
+    ]
+  }
+}

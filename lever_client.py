@@ -53,46 +53,87 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
 
     Args:
         posting_id: The Lever posting ID
-        include_archived: If True, include both active and archived candidates.
-                         If False, only include active (non-archived) candidates.
+        include_archived: If True, include both active and archived applications for the posting.
+                         If False, only include active (non-archived) applications.
 
     Returns:
         List of candidate dictionaries
     """
-    candidates = []
-    offset = None
+    if not include_archived:
+        # Fast path: Use posting_id filter to get only active applications
+        candidates = []
+        offset = None
 
-    while True:
-        params = {
-            "posting_id": posting_id,
-            "limit": 100
-        }
-        if include_archived:
-            params["expand"] = "archived"
-        if offset:
-            params["offset"] = offset
+        while True:
+            params = {
+                "posting_id": posting_id,
+                "limit": 100
+            }
+            if offset:
+                params["offset"] = offset
 
-        response = requests.get(
-            f"{LEVER_API_BASE}/opportunities",
-            headers=get_auth_header(),
-            params=params
-        )
+            response = requests.get(
+                f"{LEVER_API_BASE}/opportunities",
+                headers=get_auth_header(),
+                params=params
+            )
 
-        if response.status_code != 200:
-            raise Exception(f"Failed to fetch candidates: {response.text}")
+            if response.status_code != 200:
+                raise Exception(f"Failed to fetch candidates: {response.text}")
 
-        data = response.json()
+            data = response.json()
+            candidates.extend(data.get("data", []))
 
-        # Filter based on archived status
-        for candidate in data.get("data", []):
-            if include_archived or not candidate.get("archived"):
-                candidates.append(candidate)
+            if not data.get("hasNext"):
+                break
+            offset = data.get("next")
 
-        if not data.get("hasNext"):
-            break
-        offset = data.get("next")
+        return candidates
 
-    return candidates
+    else:
+        # Slow path: Fetch all opportunities and filter for applications to this posting
+        # This is necessary because posting_id filter excludes archived applications
+        # Note: This fetches ALL opportunities which can be slow for large databases
+        all_opportunities = []
+        offset = None
+        pages_fetched = 0
+        max_pages = 100  # Safety limit to prevent excessive API calls
+
+        while pages_fetched < max_pages:
+            params = {
+                "limit": 100,
+                "expand": "applications"
+            }
+            if offset:
+                params["offset"] = offset
+
+            response = requests.get(
+                f"{LEVER_API_BASE}/opportunities",
+                headers=get_auth_header(),
+                params=params
+            )
+
+            if response.status_code != 200:
+                raise Exception(f"Failed to fetch opportunities: {response.text}")
+
+            data = response.json()
+            all_opportunities.extend(data.get("data", []))
+            pages_fetched += 1
+
+            if not data.get("hasNext"):
+                break
+            offset = data.get("next")
+
+        # Filter for opportunities that have applications (active or archived) for this posting
+        candidates = []
+        for opp in all_opportunities:
+            applications = opp.get("applications", [])
+            for app in applications:
+                if isinstance(app, dict) and app.get("posting") == posting_id:
+                    candidates.append(opp)
+                    break  # Count each opportunity only once
+
+        return candidates
 
 
 def fetch_candidate_resumes(opportunity_id: str) -> list[dict]:
