@@ -372,7 +372,8 @@ def filter_candidates_by_location(candidates: list[dict], location_filter: str) 
         # If candidate has a location, check if it matches ANY of the filters
         if candidate_location:
             for filter_loc in location_filters:
-                if locations_match(candidate_location, filter_loc):
+                # Important: filter_loc must be first parameter so regions get expanded correctly
+                if locations_match(filter_loc, candidate_location):
                     filtered.append(candidate)
                     break  # Don't add the same candidate multiple times
         # If no location data, we might want to include them (configurable)
