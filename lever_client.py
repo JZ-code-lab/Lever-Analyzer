@@ -59,8 +59,7 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
     Returns:
         List of candidate dictionaries
     """
-    # Get active candidates using the posting_id filter
-    active_candidates = []
+    candidates = []
     offset = None
 
     while True:
@@ -68,6 +67,11 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
             "posting_id": posting_id,
             "limit": 100
         }
+
+        # Add expand parameter to include archived candidates when requested
+        if include_archived:
+            params["expand"] = "archived"
+
         if offset:
             params["offset"] = offset
 
@@ -81,47 +85,13 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
             raise Exception(f"Failed to fetch candidates: {response.text}")
 
         data = response.json()
-        active_candidates.extend(data.get("data", []))
+        candidates.extend(data.get("data", []))
 
         if not data.get("hasNext"):
             break
         offset = data.get("next")
 
-    if not include_archived:
-        return active_candidates
-
-    # Get archived candidates by using both posting_id and archived_posting_id parameters
-    # This returns only archived candidates for this specific posting
-    archived_candidates = []
-    offset = None
-
-    while True:
-        params = {
-            "posting_id": posting_id,
-            "archived_posting_id": posting_id,
-            "limit": 100
-        }
-        if offset:
-            params["offset"] = offset
-
-        response = requests.get(
-            f"{LEVER_API_BASE}/opportunities",
-            headers=get_auth_header(),
-            params=params
-        )
-
-        if response.status_code != 200:
-            raise Exception(f"Failed to fetch archived candidates: {response.text}")
-
-        data = response.json()
-        archived_candidates.extend(data.get("data", []))
-
-        if not data.get("hasNext"):
-            break
-        offset = data.get("next")
-
-    # Combine active and archived candidates
-    return active_candidates + archived_candidates
+    return candidates
 
 
 def fetch_candidate_resumes(opportunity_id: str) -> list[dict]:

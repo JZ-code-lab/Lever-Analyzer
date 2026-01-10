@@ -340,6 +340,9 @@ def extract_phone_numbers(text: str) -> list[str]:
     if not text:
         return []
 
+    # Limit search to first 2000 characters for performance
+    search_text = text[:2000]
+
     phone_numbers = []
 
     # Common phone number patterns
@@ -350,8 +353,11 @@ def extract_phone_numbers(text: str) -> list[str]:
     ]
 
     for pattern in patterns:
-        matches = re.findall(pattern, text)
+        matches = re.findall(pattern, search_text)
         phone_numbers.extend(matches)
+        # Stop after finding the first phone number for performance
+        if phone_numbers:
+            break
 
     return phone_numbers
 
@@ -409,11 +415,16 @@ def extract_location_from_resume(resume_text: str) -> Optional[str]:
     if not resume_text:
         return None
 
+    # Limit search to first 2000 characters (header section) for performance
+    # Most resumes have location at the top
+    search_text = resume_text[:2000]
+
     # Pattern 1: City, State (full name or abbreviation) with optional ZIP
     # Examples: "San Francisco, CA", "New York, New York 10001"
-    city_state_pattern = r'\b([A-Z][a-zA-Z\s]+),\s*([A-Z]{2}|[A-Z][a-zA-Z\s]+)(?:\s+\d{5})?\b'
+    # Made more efficient by using non-greedy quantifiers and atomic groups
+    city_state_pattern = r'\b([A-Z][a-zA-Z ]{1,30}?),\s*([A-Z]{2}|[A-Z][a-zA-Z ]{1,20}?)(?:\s+\d{5})?\b'
 
-    matches = re.findall(city_state_pattern, resume_text)
+    matches = re.findall(city_state_pattern, search_text)
 
     if matches:
         # Return the first match, which is usually the candidate's location
@@ -423,9 +434,9 @@ def extract_location_from_resume(resume_text: str) -> Optional[str]:
 
     # Pattern 2: Look for location keywords followed by city/state
     # Examples: "Location: San Francisco, CA", "Based in Seattle, WA"
-    location_keyword_pattern = r'(?:Location|Based in|Residing in|Address):\s*([A-Z][a-zA-Z\s]+,\s*[A-Z]{2})'
+    location_keyword_pattern = r'(?:Location|Based in|Residing in|Address):\s*([A-Z][a-zA-Z ]{1,30}?,\s*[A-Z]{2})'
 
-    keyword_match = re.search(location_keyword_pattern, resume_text, re.IGNORECASE)
+    keyword_match = re.search(location_keyword_pattern, search_text, re.IGNORECASE)
     if keyword_match:
         return keyword_match.group(1).strip()
 
@@ -558,13 +569,14 @@ def filter_candidates_by_location(candidates: list[dict], location_filter: str, 
     return filtered
 
 
-def filter_candidates_with_resumes_by_location(candidates_with_resumes: list[dict], location_filter: str) -> list[dict]:
+def filter_candidates_with_resumes_by_location(candidates_with_resumes: list[dict], location_filter: str, progress_callback=None) -> list[dict]:
     """
     Filter candidates_with_resumes by location using multi-source detection.
 
     Args:
         candidates_with_resumes: List of dicts with 'candidate' and 'resume_text' keys
         location_filter: Location string(s) to filter by (newline-separated)
+        progress_callback: Optional callback function(current, total) for progress updates
 
     Returns:
         Filtered list of candidates_with_resumes matching any of the specified locations
@@ -577,9 +589,25 @@ def filter_candidates_with_resumes_by_location(candidates_with_resumes: list[dic
     # Split by newlines to support multiple locations (one per line)
     location_filters = [loc.strip() for loc in location_filter.split('\n') if loc.strip()]
 
-    filtered = []
+    # Pre-expand all filter locations (to avoid re-expanding for every candidate)
+    expanded_filters = []
+    for filter_loc in location_filters:
+        expanded = expand_region(filter_loc)
+        if len(expanded) > 1:
+            # This was a region, store all expanded cities
+            expanded_filters.extend([(city, True) for city in expanded])
+        else:
+            # Not a region, store as-is
+            expanded_filters.append((filter_loc, False))
 
-    for item in candidates_with_resumes:
+    filtered = []
+    total = len(candidates_with_resumes)
+
+    for idx, item in enumerate(candidates_with_resumes):
+        # Report progress
+        if progress_callback and idx % 5 == 0:  # Update every 5 candidates
+            progress_callback(idx, total)
+
         candidate = item["candidate"]
         resume_text = item.get("resume_text")
 
@@ -588,11 +616,15 @@ def filter_candidates_with_resumes_by_location(candidates_with_resumes: list[dic
 
         # If candidate has a location, check if it matches ANY of the filters
         if candidate_location:
-            for filter_loc in location_filters:
-                # Important: filter_loc must be first parameter so regions get expanded correctly
-                if locations_match(filter_loc, candidate_location):
+            for filter_loc, is_expanded in expanded_filters:
+                # Use _expanded=True when checking expanded cities to avoid re-expansion
+                if locations_match(filter_loc, candidate_location, _expanded=is_expanded):
                     filtered.append(item)
                     break  # Don't add the same item multiple times
         # If no location data found from any source, exclude the candidate
+
+    # Final progress update
+    if progress_callback:
+        progress_callback(total, total)
 
     return filtered

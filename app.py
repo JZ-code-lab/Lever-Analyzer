@@ -578,18 +578,23 @@ elif st.session_state.current_step == 2:
 
                         # Show progress for filtering
                         filter_status = st.empty()
+                        filter_progress = st.progress(0)
                         filter_parts = []
                         if st.session_state.country_filters:
                             filter_parts.append(f"{len(st.session_state.country_filters)} country/countries")
                         if st.session_state.location_filters:
                             filter_parts.append(f"{len(st.session_state.location_filters)} location(s)")
-                        filter_status.text(f"Applying filters ({', '.join(filter_parts)}) to {candidates_before_filter} candidates...")
+
+                        def update_filter_progress(current, total):
+                            filter_progress.progress(current / total if total > 0 else 0)
+                            filter_status.text(f"Filtering candidate {current}/{total} ({', '.join(filter_parts)})...")
 
                         try:
                             # Filter using multi-source location detection
                             candidates_with_resumes = filter_candidates_with_resumes_by_location(
                                 candidates_with_resumes,
-                                filter_string
+                                filter_string,
+                                progress_callback=update_filter_progress
                             )
 
                             candidates_after_filter = len(candidates_with_resumes)
@@ -604,12 +609,14 @@ elif st.session_state.current_step == 2:
                                 filter_desc_parts.append(f"Locations: {locations_text}")
 
                             filter_status.empty()
+                            filter_progress.empty()
                             st.info(f"Filters applied: {candidates_after_filter} of {candidates_before_filter} candidates match. {' | '.join(filter_desc_parts)}")
 
                             if not candidates_with_resumes:
                                 st.warning(f"No candidates match your filters. Try different filters or remove them.")
                         except Exception as e:
                             filter_status.empty()
+                            filter_progress.empty()
                             st.error(f"Error applying filters: {str(e)}")
                             st.warning("Proceeding without filters.")
                             # Continue with all candidates if filtering fails
