@@ -147,12 +147,22 @@ with st.sidebar:
             st.info(f"Showing scores ≥ {st.session_state.minimum_score}")
 
 if st.session_state.analysis_results:
-    if st.button("← Start New Analysis", type="secondary"):
-        st.session_state.analysis_results = None
-        st.session_state.current_step = 1
-        st.session_state.selected_postings = []
-        st.session_state.minimum_score = 0
-        st.rerun()
+    col_btn1, col_btn2, col_spacer = st.columns([1, 1, 2])
+
+    with col_btn1:
+        if st.button("🔄 Adjust & Re-run", type="primary", use_container_width=True):
+            st.session_state.analysis_results = None
+            st.session_state.current_step = 2
+            st.session_state.minimum_score = 0
+            st.rerun()
+
+    with col_btn2:
+        if st.button("← Start New Analysis", type="secondary", use_container_width=True):
+            st.session_state.analysis_results = None
+            st.session_state.current_step = 1
+            st.session_state.selected_postings = []
+            st.session_state.minimum_score = 0
+            st.rerun()
 
     st.header("📈 Candidate Rankings")
     position_names = [p.get('text', 'Unknown') for p in st.session_state.selected_postings]
