@@ -497,17 +497,8 @@ elif st.session_state.current_step == 2:
                 status_msg += " (active only)"
             st.info(status_msg)
 
-            # Apply location filter if specified
-            if st.session_state.location_filters:
-                candidates_before_filter = len(candidates)
-                # Join locations with newlines for the filter function
-                location_filter_string = '\n'.join(st.session_state.location_filters)
-                candidates = filter_candidates_by_location(candidates, location_filter_string)
-                candidates_after_filter = len(candidates)
-
-                if candidates_before_filter > 0:
-                    locations_text = ', '.join(st.session_state.location_filters)
-                    st.info(f"Location filter applied: {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
+            # Note: Location filtering happens AFTER fetching resumes
+            # Many candidates don't have location in Lever field - it's often in the resume
 
             if not candidates:
                 candidate_type = "candidates" if st.session_state.include_archived else "active candidates"
@@ -534,37 +525,62 @@ elif st.session_state.current_step == 2:
                 
                 progress_bar.empty()
                 status_text.empty()
-                
+
                 if not candidates_with_resumes:
                     st.warning("No resumes found for any candidates.")
                 else:
-                    st.info(f"Analyzing {len(candidates_with_resumes)} candidates with resumes...")
-                    
-                    analysis_progress = st.progress(0)
-                    analysis_status = st.empty()
-                    
-                    def update_progress(completed, total):
-                        analysis_progress.progress(completed / total)
-                        analysis_status.text(f"Analyzed {completed}/{total} candidates")
-                    
-                    try:
-                        results = analyze_candidates_batch(
-                            candidates_with_resumes=candidates_with_resumes,
-                            job_description=st.session_state.job_description if st.session_state.job_description.strip() else None,
-                            weighted_requirements=valid_requirements,
-                            jd_weight=st.session_state.jd_weight,
-                            progress_callback=update_progress
-                        )
-                        
-                        st.session_state.analysis_results = results
-                        analysis_progress.empty()
-                        analysis_status.empty()
-                        st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"Analysis failed: {str(e)}")
-                        analysis_progress.empty()
-                        analysis_status.empty()
+                    # Apply location filter if specified (after fetching resumes)
+                    if st.session_state.location_filters:
+                        candidates_before_filter = len(candidates_with_resumes)
+                        # Extract just the candidate objects for filtering
+                        candidate_objects = [c["candidate"] for c in candidates_with_resumes]
+
+                        # Join locations with newlines for the filter function
+                        location_filter_string = '\n'.join(st.session_state.location_filters)
+                        filtered_candidates = filter_candidates_by_location(candidate_objects, location_filter_string)
+
+                        # Keep only the candidates_with_resumes entries that match
+                        filtered_candidate_ids = {c["id"] for c in filtered_candidates}
+                        candidates_with_resumes = [
+                            c for c in candidates_with_resumes
+                            if c["candidate"]["id"] in filtered_candidate_ids
+                        ]
+
+                        candidates_after_filter = len(candidates_with_resumes)
+                        locations_text = ', '.join(st.session_state.location_filters)
+                        st.info(f"Location filter applied: {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
+
+                        if not candidates_with_resumes:
+                            st.warning(f"No candidates match the location filter: {locations_text}. Try different locations or remove the filter.")
+
+                    if candidates_with_resumes:
+                        st.info(f"Analyzing {len(candidates_with_resumes)} candidates with resumes...")
+
+                        analysis_progress = st.progress(0)
+                        analysis_status = st.empty()
+
+                        def update_progress(completed, total):
+                            analysis_progress.progress(completed / total)
+                            analysis_status.text(f"Analyzed {completed}/{total} candidates")
+
+                        try:
+                            results = analyze_candidates_batch(
+                                candidates_with_resumes=candidates_with_resumes,
+                                job_description=st.session_state.job_description if st.session_state.job_description.strip() else None,
+                                weighted_requirements=valid_requirements,
+                                jd_weight=st.session_state.jd_weight,
+                                progress_callback=update_progress
+                            )
+
+                            st.session_state.analysis_results = results
+                            analysis_progress.empty()
+                            analysis_status.empty()
+                            st.rerun()
+                        except Exception as e:
+                            analysis_progress.empty()
+                            analysis_status.empty()
+                            st.error(f"Error during analysis: {str(e)}")
+                            raise
 
 st.divider()
 st.caption("Lever Analyzer - AI-powered candidate ranking and analysis")
