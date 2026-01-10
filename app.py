@@ -37,6 +37,8 @@ if "location_filter" not in st.session_state:
     st.session_state.location_filter = ""
 if "location_filters" not in st.session_state:
     st.session_state.location_filters = []
+if "country_filters" not in st.session_state:
+    st.session_state.country_filters = []
 if "minimum_score" not in st.session_state:
     st.session_state.minimum_score = 0
 if "include_archived" not in st.session_state:
@@ -128,8 +130,42 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**Location Filter**")
-    st.caption("Add locations to filter candidates. Press Enter after typing each location.")
+    st.markdown("**Country Filter** (Optional)")
+    st.caption("Filter by country (e.g., USA, UK, Canada). Press Enter after typing each country.")
+
+    # Input box for adding new countries (using form to support Enter key)
+    with st.form(key="country_form", clear_on_submit=True):
+        new_country = st.text_input(
+            "Add country",
+            placeholder="Type country and press Enter",
+            label_visibility="collapsed"
+        )
+        submitted_country = st.form_submit_button("➕ Add", use_container_width=True)
+
+        if submitted_country and new_country and new_country.strip():
+            country_to_add = new_country.strip()
+            if country_to_add not in st.session_state.country_filters:
+                st.session_state.country_filters.append(country_to_add)
+                st.rerun()
+
+    # Display existing country filters as a simple list
+    if st.session_state.country_filters:
+        st.markdown(f"**Countries ({len(st.session_state.country_filters)}):**")
+
+        for idx, country in enumerate(st.session_state.country_filters):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.text(country)
+            with col2:
+                if st.button("✕", key=f"remove_country_{idx}", help=f"Remove {country}"):
+                    st.session_state.country_filters.pop(idx)
+                    st.rerun()
+    else:
+        st.caption("No countries added")
+
+    st.markdown("---")
+    st.markdown("**City/State/Region Filter** (Optional)")
+    st.caption("Filter by city, state, or region (e.g., California, Bay Area, NYC Metro). Press Enter after typing each location.")
 
     # Input box for adding new locations (using form to support Enter key)
     with st.form(key="location_form", clear_on_submit=True):
@@ -151,8 +187,6 @@ with st.sidebar:
         st.markdown(f"**Locations ({len(st.session_state.location_filters)}):**")
 
         for idx, location in enumerate(st.session_state.location_filters):
-            # Wrap in a container div for hover effect
-            st.markdown(f'<div class="location-item">', unsafe_allow_html=True)
             col1, col2 = st.columns([4, 1])
             with col1:
                 st.text(location)
@@ -160,7 +194,6 @@ with st.sidebar:
                 if st.button("✕", key=f"remove_loc_{idx}", help=f"Remove {location}"):
                     st.session_state.location_filters.pop(idx)
                     st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.caption("No locations added")
 
@@ -529,36 +562,56 @@ elif st.session_state.current_step == 2:
                 if not candidates_with_resumes:
                     st.warning("No resumes found for any candidates.")
                 else:
-                    # Apply location filter if specified (after fetching resumes)
+                    # Apply location/country filters if specified (after fetching resumes)
                     # Uses multi-source detection: 1) Lever field, 2) Resume text, 3) Phone area code
-                    if st.session_state.location_filters:
+                    if st.session_state.country_filters or st.session_state.location_filters:
                         candidates_before_filter = len(candidates_with_resumes)
 
-                        # Join locations with newlines for the filter function
-                        location_filter_string = '\n'.join(st.session_state.location_filters)
+                        # Combine country and location filters (newline-separated)
+                        all_filters = []
+                        if st.session_state.country_filters:
+                            all_filters.extend(st.session_state.country_filters)
+                        if st.session_state.location_filters:
+                            all_filters.extend(st.session_state.location_filters)
 
-                        # Show progress for location filtering
+                        filter_string = '\n'.join(all_filters)
+
+                        # Show progress for filtering
                         filter_status = st.empty()
-                        filter_status.text(f"Applying location filter to {candidates_before_filter} candidates...")
+                        filter_parts = []
+                        if st.session_state.country_filters:
+                            filter_parts.append(f"{len(st.session_state.country_filters)} country/countries")
+                        if st.session_state.location_filters:
+                            filter_parts.append(f"{len(st.session_state.location_filters)} location(s)")
+                        filter_status.text(f"Applying filters ({', '.join(filter_parts)}) to {candidates_before_filter} candidates...")
 
                         try:
                             # Filter using multi-source location detection
                             candidates_with_resumes = filter_candidates_with_resumes_by_location(
                                 candidates_with_resumes,
-                                location_filter_string
+                                filter_string
                             )
 
                             candidates_after_filter = len(candidates_with_resumes)
-                            locations_text = ', '.join(st.session_state.location_filters)
+
+                            # Build filter description
+                            filter_desc_parts = []
+                            if st.session_state.country_filters:
+                                countries_text = ', '.join(st.session_state.country_filters)
+                                filter_desc_parts.append(f"Countries: {countries_text}")
+                            if st.session_state.location_filters:
+                                locations_text = ', '.join(st.session_state.location_filters)
+                                filter_desc_parts.append(f"Locations: {locations_text}")
+
                             filter_status.empty()
-                            st.info(f"Location filter applied (checking Lever, resume, and phone): {candidates_after_filter} of {candidates_before_filter} candidates match {len(st.session_state.location_filters)} location(s): {locations_text}")
+                            st.info(f"Filters applied: {candidates_after_filter} of {candidates_before_filter} candidates match. {' | '.join(filter_desc_parts)}")
 
                             if not candidates_with_resumes:
-                                st.warning(f"No candidates match the location filter: {locations_text}. Try different locations or remove the filter.")
+                                st.warning(f"No candidates match your filters. Try different filters or remove them.")
                         except Exception as e:
                             filter_status.empty()
-                            st.error(f"Error applying location filter: {str(e)}")
-                            st.warning("Proceeding without location filter.")
+                            st.error(f"Error applying filters: {str(e)}")
+                            st.warning("Proceeding without filters.")
                             # Continue with all candidates if filtering fails
 
                     if candidates_with_resumes:
