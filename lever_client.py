@@ -60,17 +60,37 @@ def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False
         List of candidate dictionaries
     """
     candidates = []
+
+    # Fetch active candidates (default behavior)
+    candidates.extend(_fetch_candidates_with_status(posting_id, archived=False))
+
+    # If include_archived is True, also fetch archived candidates
+    if include_archived:
+        candidates.extend(_fetch_candidates_with_status(posting_id, archived=True))
+
+    return candidates
+
+
+def _fetch_candidates_with_status(posting_id: str, archived: bool) -> list[dict]:
+    """
+    Internal function to fetch candidates with a specific archived status.
+
+    Args:
+        posting_id: The Lever posting ID
+        archived: True to fetch archived candidates, False to fetch active candidates
+
+    Returns:
+        List of candidate dictionaries
+    """
+    candidates = []
     offset = None
 
     while True:
         params = {
             "posting_id": posting_id,
-            "limit": 100
+            "limit": 100,
+            "archived": "true" if archived else "false"
         }
-
-        # Add expand parameter to include archived candidates when requested
-        if include_archived:
-            params["expand"] = "archived"
 
         if offset:
             params["offset"] = offset
