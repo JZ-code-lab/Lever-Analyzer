@@ -36,10 +36,24 @@ def export_results_to_csv(results: list[dict]) -> str:
 
         # Format strengths and weaknesses as bullet lists
         strengths = analysis.get("strengths", [])
-        strengths_text = "; ".join(strengths) if isinstance(strengths, list) else str(strengths)
+        if isinstance(strengths, list):
+            # Handle both string items and dict items
+            strengths_text = "; ".join(
+                str(item) if isinstance(item, str) else str(item.get("text", item.get("description", str(item))))
+                for item in strengths
+            )
+        else:
+            strengths_text = str(strengths)
 
         weaknesses = analysis.get("weaknesses", [])
-        weaknesses_text = "; ".join(weaknesses) if isinstance(weaknesses, list) else str(weaknesses)
+        if isinstance(weaknesses, list):
+            # Handle both string items and dict items
+            weaknesses_text = "; ".join(
+                str(item) if isinstance(item, str) else str(item.get("text", item.get("description", str(item))))
+                for item in weaknesses
+            )
+        else:
+            weaknesses_text = str(weaknesses)
 
         # Get requirement scores
         req_scores = analysis.get("requirement_scores", {})

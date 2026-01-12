@@ -310,12 +310,26 @@ if st.session_state.analysis_results:
                     st.markdown("**Strengths:**")
                     strengths = analysis.get("strengths", [])
                     for strength in strengths:
-                        st.markdown(f"✅ {strength}")
+                        # Handle both string and dict formats
+                        if isinstance(strength, str):
+                            st.markdown(f"✅ {strength}")
+                        elif isinstance(strength, dict):
+                            text = strength.get("text", strength.get("description", str(strength)))
+                            st.markdown(f"✅ {text}")
+                        else:
+                            st.markdown(f"✅ {strength}")
 
                     st.markdown("**Weaknesses:**")
                     weaknesses = analysis.get("weaknesses", [])
                     for weakness in weaknesses:
-                        st.markdown(f"⚠️ {weakness}")
+                        # Handle both string and dict formats
+                        if isinstance(weakness, str):
+                            st.markdown(f"⚠️ {weakness}")
+                        elif isinstance(weakness, dict):
+                            text = weakness.get("text", weakness.get("description", str(weakness)))
+                            st.markdown(f"⚠️ {text}")
+                        else:
+                            st.markdown(f"⚠️ {weakness}")
 
                 with col2:
                     st.markdown("**Score Breakdown:**")
@@ -567,15 +581,6 @@ elif st.session_state.current_step == 2:
                     if st.session_state.country_filters or st.session_state.location_filters:
                         candidates_before_filter = len(candidates_with_resumes)
 
-                        # Combine country and location filters (newline-separated)
-                        all_filters = []
-                        if st.session_state.country_filters:
-                            all_filters.extend(st.session_state.country_filters)
-                        if st.session_state.location_filters:
-                            all_filters.extend(st.session_state.location_filters)
-
-                        filter_string = '\n'.join(all_filters)
-
                         # Show progress for filtering
                         filter_status = st.empty()
                         filter_progress = st.progress(0)
@@ -590,12 +595,23 @@ elif st.session_state.current_step == 2:
                             filter_status.text(f"Filtering candidate {current}/{total} ({', '.join(filter_parts)})...")
 
                         try:
-                            # Filter using multi-source location detection
-                            candidates_with_resumes = filter_candidates_with_resumes_by_location(
-                                candidates_with_resumes,
-                                filter_string,
-                                progress_callback=update_filter_progress
-                            )
+                            # Apply country filters first (if any) with OR logic
+                            if st.session_state.country_filters:
+                                country_filter_string = '\n'.join(st.session_state.country_filters)
+                                candidates_with_resumes = filter_candidates_with_resumes_by_location(
+                                    candidates_with_resumes,
+                                    country_filter_string,
+                                    progress_callback=update_filter_progress
+                                )
+
+                            # Then apply location filters (if any) with OR logic on the country-filtered results
+                            if st.session_state.location_filters:
+                                location_filter_string = '\n'.join(st.session_state.location_filters)
+                                candidates_with_resumes = filter_candidates_with_resumes_by_location(
+                                    candidates_with_resumes,
+                                    location_filter_string,
+                                    progress_callback=update_filter_progress
+                                )
 
                             candidates_after_filter = len(candidates_with_resumes)
 
