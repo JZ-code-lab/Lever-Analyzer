@@ -10,7 +10,7 @@ from lever_client import (
     get_candidate_lever_url
 )
 from resume_analyzer import analyze_candidates_batch
-from location_utils import filter_candidates_with_resumes_by_location
+from location_utils import filter_candidates_with_resumes_by_location, filter_candidates_by_location_fast
 from export_utils import export_results_to_csv, filter_results_by_score
 
 st.set_page_config(
@@ -383,13 +383,20 @@ elif st.session_state.current_step == 1:
                 st.caption(f"{len(postings)} positions found")
             
             posting_options = {
-                f"{p.get('text', 'Untitled')} ({p.get('state', 'unknown')})": p 
+                f"{p.get('text', 'Untitled')} ({p.get('state', 'unknown')})": p
                 for p in postings
             }
-            
+
+            # Preserve previously selected postings across reruns
+            default_selections = [
+                key for key, posting in posting_options.items()
+                if posting.get('id') in [p.get('id') for p in st.session_state.selected_postings]
+            ]
+
             selected_options = st.multiselect(
                 "Search and select positions",
                 options=list(posting_options.keys()),
+                default=default_selections,
                 help="Select one or more positions to analyze candidates across multiple roles",
                 placeholder="Type to search and select positions..."
             )
@@ -544,98 +551,93 @@ elif st.session_state.current_step == 2:
                 status_msg += " (active only)"
             st.info(status_msg)
 
-            # Note: Location filtering happens AFTER fetching resumes
-            # Many candidates don't have location in Lever field - it's often in the resume
-
             if not candidates:
                 candidate_type = "candidates" if st.session_state.include_archived else "active candidates"
                 st.warning(f"No {candidate_type} found for the selected positions.")
             else:
-                st.info(f"Fetching resumes for {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}...")
-                
+                # OPTIMIZATION: If location filters exist, do fast pre-filter before fetching resumes
+                # This dramatically reduces resume fetching time
+                candidates_to_fetch = candidates
+                total_before_filter = len(candidates)
+                candidates_matched_lever = []
+                candidates_no_location = []
+
+                if st.session_state.country_filters or st.session_state.location_filters:
+                    # Build combined filter string
+                    all_filters = []
+                    if st.session_state.country_filters:
+                        all_filters.extend(st.session_state.country_filters)
+                    if st.session_state.location_filters:
+                        all_filters.extend(st.session_state.location_filters)
+                    combined_filter = '\n'.join(all_filters)
+
+                    # Fast filter using only Lever location data (no resume needed)
+                    st.info(f"Applying location pre-filter (using Lever data only)...")
+                    candidates_matched_lever, candidates_no_location = filter_candidates_by_location_fast(
+                        candidates,
+                        combined_filter
+                    )
+
+                    candidates_to_fetch = candidates_matched_lever + candidates_no_location
+
+                    filter_desc_parts = []
+                    if st.session_state.country_filters:
+                        filter_desc_parts.append(f"{', '.join(st.session_state.country_filters)}")
+                    if st.session_state.location_filters:
+                        filter_desc_parts.append(f"{', '.join(st.session_state.location_filters)}")
+
+                    st.info(f"Pre-filter results: {len(candidates_matched_lever)} matched in Lever, {len(candidates_no_location)} need resume check. Fetching {len(candidates_to_fetch)} of {total_before_filter} resumes. Filters: {' | '.join(filter_desc_parts)}")
+
+                # Fetch resumes for filtered candidates
+                st.info(f"Fetching resumes for {len(candidates_to_fetch)} candidate{'s' if len(candidates_to_fetch) != 1 else ''}...")
+
                 candidates_with_resumes = []
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-                
-                for i, candidate in enumerate(candidates):
-                    status_text.text(f"Fetching resume {i+1}/{len(candidates)}: {get_candidate_name(candidate)}")
-                    
+
+                for i, candidate in enumerate(candidates_to_fetch):
+                    status_text.text(f"Fetching resume {i+1}/{len(candidates_to_fetch)}: {get_candidate_name(candidate)}")
+
                     resume_text = get_resume_text_for_candidate(candidate.get("id"))
-                    
+
                     if resume_text:
                         candidates_with_resumes.append({
                             "candidate": candidate,
                             "resume_text": resume_text
                         })
-                    
-                    progress_bar.progress((i + 1) / len(candidates))
-                
+
+                    progress_bar.progress((i + 1) / len(candidates_to_fetch))
+
                 progress_bar.empty()
                 status_text.empty()
 
                 if not candidates_with_resumes:
                     st.warning("No resumes found for any candidates.")
                 else:
-                    # Apply location/country filters if specified (after fetching resumes)
-                    # Uses multi-source detection: 1) Lever field, 2) Resume text, 3) Phone area code
-                    if st.session_state.country_filters or st.session_state.location_filters:
-                        candidates_before_filter = len(candidates_with_resumes)
-
-                        # Show progress for filtering
-                        filter_status = st.empty()
-                        filter_progress = st.progress(0)
-                        filter_parts = []
+                    # If we had candidates with no Lever location, filter them now using resume data
+                    if candidates_no_location and (st.session_state.country_filters or st.session_state.location_filters):
+                        all_filters = []
                         if st.session_state.country_filters:
-                            filter_parts.append(f"{len(st.session_state.country_filters)} country/countries")
+                            all_filters.extend(st.session_state.country_filters)
                         if st.session_state.location_filters:
-                            filter_parts.append(f"{len(st.session_state.location_filters)} location(s)")
+                            all_filters.extend(st.session_state.location_filters)
+                        combined_filter = '\n'.join(all_filters)
 
-                        def update_filter_progress(current, total):
-                            filter_progress.progress(current / total if total > 0 else 0)
-                            filter_status.text(f"Filtering candidate {current}/{total} ({', '.join(filter_parts)})...")
+                        # Filter the ones that had no Lever location using resume data
+                        candidates_no_lever_ids = {c.get("id") for c in candidates_no_location}
+                        candidates_with_lever = [item for item in candidates_with_resumes if item["candidate"].get("id") not in candidates_no_lever_ids]
+                        candidates_without_lever = [item for item in candidates_with_resumes if item["candidate"].get("id") in candidates_no_lever_ids]
 
-                        try:
-                            # Apply country filters first (if any) with OR logic
-                            if st.session_state.country_filters:
-                                country_filter_string = '\n'.join(st.session_state.country_filters)
-                                candidates_with_resumes = filter_candidates_with_resumes_by_location(
-                                    candidates_with_resumes,
-                                    country_filter_string,
-                                    progress_callback=update_filter_progress
-                                )
+                        # Filter the no-lever candidates using resume data
+                        filtered_no_lever = filter_candidates_with_resumes_by_location(
+                            candidates_without_lever,
+                            combined_filter
+                        )
 
-                            # Then apply location filters (if any) with OR logic on the country-filtered results
-                            if st.session_state.location_filters:
-                                location_filter_string = '\n'.join(st.session_state.location_filters)
-                                candidates_with_resumes = filter_candidates_with_resumes_by_location(
-                                    candidates_with_resumes,
-                                    location_filter_string,
-                                    progress_callback=update_filter_progress
-                                )
+                        # Combine: candidates matched by Lever + candidates matched by resume
+                        candidates_with_resumes = candidates_with_lever + filtered_no_lever
 
-                            candidates_after_filter = len(candidates_with_resumes)
-
-                            # Build filter description
-                            filter_desc_parts = []
-                            if st.session_state.country_filters:
-                                countries_text = ', '.join(st.session_state.country_filters)
-                                filter_desc_parts.append(f"Countries: {countries_text}")
-                            if st.session_state.location_filters:
-                                locations_text = ', '.join(st.session_state.location_filters)
-                                filter_desc_parts.append(f"Locations: {locations_text}")
-
-                            filter_status.empty()
-                            filter_progress.empty()
-                            st.info(f"Filters applied: {candidates_after_filter} of {candidates_before_filter} candidates match. {' | '.join(filter_desc_parts)}")
-
-                            if not candidates_with_resumes:
-                                st.warning(f"No candidates match your filters. Try different filters or remove them.")
-                        except Exception as e:
-                            filter_status.empty()
-                            filter_progress.empty()
-                            st.error(f"Error applying filters: {str(e)}")
-                            st.warning("Proceeding without filters.")
-                            # Continue with all candidates if filtering fails
+                        st.info(f"Final count after resume-based filtering: {len(candidates_with_resumes)} candidates match your filters.")
 
                     if candidates_with_resumes:
                         st.info(f"Analyzing {len(candidates_with_resumes)} candidates with resumes...")

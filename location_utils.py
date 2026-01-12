@@ -222,9 +222,9 @@ def normalize_location(location: str) -> dict:
             result["country_code"] = "USA"
             continue
 
-        # Check if it's a country (skip obvious non-countries)
-        # Only check if it's a reasonable country name (no spaces, not a common US city)
-        if ' ' not in part and part.lower() not in ['san', 'los', 'new', 'fort', 'saint', 'mount']:
+        # Check if it's a country
+        # Skip obvious city name prefixes, but allow spaces in country names
+        if part.lower() not in ['san', 'los', 'new', 'fort', 'saint', 'mount']:
             try:
                 country_name = cc.convert(part, to='name_short')
                 if country_name and country_name != 'not found':
@@ -567,6 +567,71 @@ def filter_candidates_by_location(candidates: list[dict], location_filter: str, 
         # If no location data found from any source, exclude the candidate
 
     return filtered
+
+
+def filter_candidates_by_location_fast(candidates: list[dict], location_filter: str) -> tuple[list[dict], list[dict]]:
+    """
+    Fast filter using only Lever location field (no resume parsing).
+    Returns candidates that match OR have no location (need resume check).
+
+    Args:
+        candidates: List of candidate dictionaries from Lever API
+        location_filter: Location string(s) to filter by (newline-separated)
+
+    Returns:
+        Tuple of (matched_candidates, no_location_candidates)
+        - matched_candidates: Candidates whose Lever location matches the filter
+        - no_location_candidates: Candidates with no Lever location (need resume check)
+    """
+    if not location_filter or not location_filter.strip():
+        return candidates, []
+
+    location_filter = location_filter.strip()
+
+    # Split by newlines to support multiple locations
+    location_filters = [loc.strip() for loc in location_filter.split('\n') if loc.strip()]
+
+    # Pre-expand all filter locations
+    expanded_filters = []
+    for filter_loc in location_filters:
+        expanded = expand_region(filter_loc)
+        if len(expanded) > 1:
+            expanded_filters.extend([(city, True) for city in expanded])
+        else:
+            expanded_filters.append((filter_loc, False))
+
+    matched = []
+    no_location = []
+
+    for candidate in candidates:
+        # Get location from Lever field only (no resume parsing)
+        candidate_location = None
+        if "location" in candidate and candidate["location"]:
+            candidate_location = candidate["location"]
+        elif "locations" in candidate and candidate["locations"]:
+            locations = candidate["locations"]
+            if isinstance(locations, list) and locations:
+                candidate_location = locations[0]
+            else:
+                candidate_location = locations
+        elif "contact" in candidate and isinstance(candidate.get("contact"), dict):
+            candidate_location = candidate["contact"].get("location")
+
+        # Convert to string if needed
+        if candidate_location and not isinstance(candidate_location, str):
+            candidate_location = str(candidate_location)
+
+        if candidate_location and candidate_location.strip():
+            # Has location in Lever, check if it matches
+            for filter_loc, is_expanded in expanded_filters:
+                if locations_match(filter_loc, candidate_location, _expanded=is_expanded):
+                    matched.append(candidate)
+                    break
+        else:
+            # No location in Lever - need to check resume
+            no_location.append(candidate)
+
+    return matched, no_location
 
 
 def filter_candidates_with_resumes_by_location(candidates_with_resumes: list[dict], location_filter: str, progress_callback=None) -> list[dict]:
