@@ -214,13 +214,18 @@ def normalize_location(location: str) -> dict:
     # Try to identify each part
     for part in parts:
         # Check if it's a US state (by name or abbreviation)
+        # Only accept exact matches or 2-letter abbreviations to avoid false positives
         state = us.states.lookup(part)
         if state:
-            result["state"] = state.name
-            result["state_abbr"] = state.abbr
-            result["country"] = "United States"
-            result["country_code"] = "USA"
-            continue
+            # Verify it's an exact match (case-insensitive) or a 2-letter abbreviation
+            is_exact_name = state.name.lower() == part.lower()
+            is_abbr = len(part) == 2 and state.abbr.lower() == part.lower()
+            if is_exact_name or is_abbr:
+                result["state"] = state.name
+                result["state_abbr"] = state.abbr
+                result["country"] = "United States"
+                result["country_code"] = "USA"
+                continue
 
         # Check if it's a country
         # Skip obvious city name prefixes, but allow spaces in country names
@@ -315,9 +320,10 @@ def locations_match(location1: str, location2: str, _expanded: bool = False) -> 
     words1 = set(re.split(r'[\s,;/\-]+', loc1_lower))
     words2 = set(re.split(r'[\s,;/\-]+', loc2_lower))
 
-    # Remove very short words (like state abbreviations might be too generic)
-    words1 = {w for w in words1 if len(w) > 1}
-    words2 = {w for w in words2 if len(w) > 1}
+    # Remove very short words and common city prefixes that are too generic
+    common_prefixes = {'san', 'los', 'new', 'fort', 'saint', 'st', 'mount', 'mt', 'east', 'west', 'north', 'south'}
+    words1 = {w for w in words1 if len(w) > 1 and w not in common_prefixes}
+    words2 = {w for w in words2 if len(w) > 1 and w not in common_prefixes}
 
     # If there's significant overlap (at least one meaningful word)
     overlap = words1.intersection(words2)
@@ -572,16 +578,16 @@ def filter_candidates_by_location(candidates: list[dict], location_filter: str, 
 def filter_candidates_by_location_fast(candidates: list[dict], location_filter: str) -> tuple[list[dict], list[dict]]:
     """
     Fast filter using only Lever location field (no resume parsing).
-    Returns candidates that match OR have no location (need resume check).
+    Returns candidates that match OR need resume check (vague/no location).
 
     Args:
         candidates: List of candidate dictionaries from Lever API
         location_filter: Location string(s) to filter by (newline-separated)
 
     Returns:
-        Tuple of (matched_candidates, no_location_candidates)
-        - matched_candidates: Candidates whose Lever location matches the filter
-        - no_location_candidates: Candidates with no Lever location (need resume check)
+        Tuple of (matched_candidates, needs_resume_check_candidates)
+        - matched_candidates: Candidates whose Lever location exactly matches the filter
+        - needs_resume_check_candidates: Candidates with no/vague location or same country/state
     """
     if not location_filter or not location_filter.strip():
         return candidates, []
@@ -590,6 +596,9 @@ def filter_candidates_by_location_fast(candidates: list[dict], location_filter: 
 
     # Split by newlines to support multiple locations
     location_filters = [loc.strip() for loc in location_filter.split('\n') if loc.strip()]
+
+    # Normalize all filter locations to understand what we're filtering for
+    filter_locations_normalized = [normalize_location(f) for f in location_filters]
 
     # Pre-expand all filter locations
     expanded_filters = []
@@ -601,7 +610,7 @@ def filter_candidates_by_location_fast(candidates: list[dict], location_filter: 
             expanded_filters.append((filter_loc, False))
 
     matched = []
-    no_location = []
+    needs_resume_check = []
 
     for candidate in candidates:
         # Get location from Lever field only (no resume parsing)
@@ -621,17 +630,55 @@ def filter_candidates_by_location_fast(candidates: list[dict], location_filter: 
         if candidate_location and not isinstance(candidate_location, str):
             candidate_location = str(candidate_location)
 
-        if candidate_location and candidate_location.strip():
-            # Has location in Lever, check if it matches
-            for filter_loc, is_expanded in expanded_filters:
-                if locations_match(filter_loc, candidate_location, _expanded=is_expanded):
-                    matched.append(candidate)
-                    break
-        else:
-            # No location in Lever - need to check resume
-            no_location.append(candidate)
+        if not candidate_location or not candidate_location.strip():
+            # No location in Lever - MUST check resume
+            needs_resume_check.append(candidate)
+            continue
 
-    return matched, no_location
+        # Normalize candidate location
+        candidate_norm = normalize_location(candidate_location)
+
+        # Check for exact match first
+        is_match = False
+        for filter_loc, is_expanded in expanded_filters:
+            if locations_match(filter_loc, candidate_location, _expanded=is_expanded):
+                matched.append(candidate)
+                is_match = True
+                break
+
+        if is_match:
+            continue
+
+        # Not an exact match - but should we check their resume?
+        # Include for resume check if:
+        # 1. Candidate location is vague (just country or just state)
+        # 2. Candidate is in same country/state as any filter
+        should_check_resume = False
+
+        # Check if candidate location is vague (just country or just state, no city)
+        if not candidate_norm["city"] and (candidate_norm["country"] or candidate_norm["state"]):
+            should_check_resume = True
+        else:
+            # Check if candidate is in same country/state as any filter
+            for filter_norm in filter_locations_normalized:
+                # Same country
+                if (candidate_norm["country"] and filter_norm["country"] and
+                    candidate_norm["country"].lower() == filter_norm["country"].lower()):
+                    # If filter has a state, check if same state
+                    if filter_norm["state"]:
+                        if candidate_norm["state"] and candidate_norm["state"].lower() == filter_norm["state"].lower():
+                            should_check_resume = True
+                            break
+                    else:
+                        # Filter only specified country, include all from that country for resume check
+                        should_check_resume = True
+                        break
+
+        if should_check_resume:
+            needs_resume_check.append(candidate)
+        # else: exclude this candidate (different country/state, not worth checking resume)
+
+    return matched, needs_resume_check
 
 
 def filter_candidates_with_resumes_by_location(candidates_with_resumes: list[dict], location_filter: str, progress_callback=None) -> list[dict]:
