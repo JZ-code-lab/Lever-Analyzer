@@ -120,6 +120,25 @@ st.divider()
 
 # Sidebar for global filters
 with st.sidebar:
+    # Start New Search button - accessible from any page
+    if st.button("🔄 Start New Search", type="primary", use_container_width=True):
+        # Reset all session state to start fresh
+        st.session_state.analysis_results = None
+        st.session_state.current_step = 1
+        st.session_state.selected_postings = []
+        st.session_state.minimum_score = 0
+        st.session_state.job_description = ""
+        st.session_state.requirements = [
+            {"requirement": "5+ years Python experience", "weight": 40},
+            {"requirement": "Cloud infrastructure (AWS/GCP/Azure)", "weight": 30},
+            {"requirement": "Team leadership experience", "weight": 30}
+        ]
+        st.session_state.jd_weight = 50
+        # Note: We don't reset filters (country_filters, location_filters, include_archived)
+        # so users can keep their preferred filters across searches
+        st.rerun()
+
+    st.markdown("---")
     st.header("🌍 Filters")
     st.markdown("---")
     st.markdown("**Candidate Status**")
@@ -227,10 +246,18 @@ if st.session_state.analysis_results:
 
     with col_btn2:
         if st.button("← Start New Analysis", type="secondary", use_container_width=True):
+            # Reset all session state to start fresh
             st.session_state.analysis_results = None
             st.session_state.current_step = 1
             st.session_state.selected_postings = []
             st.session_state.minimum_score = 0
+            st.session_state.job_description = ""
+            st.session_state.requirements = [
+                {"requirement": "5+ years Python experience", "weight": 40},
+                {"requirement": "Cloud infrastructure (AWS/GCP/Azure)", "weight": 30},
+                {"requirement": "Team leadership experience", "weight": 30}
+            ]
+            st.session_state.jd_weight = 50
             st.rerun()
 
     st.header("📈 Candidate Rankings")
