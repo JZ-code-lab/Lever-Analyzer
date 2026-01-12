@@ -1,5 +1,6 @@
 import re
 from typing import Optional
+from functools import lru_cache
 import country_converter as coco
 import us
 import phonenumbers
@@ -170,6 +171,7 @@ def expand_region(location: str) -> list[str]:
     return [location]
 
 
+@lru_cache(maxsize=1024)
 def normalize_location(location: str) -> dict:
     """
     Normalize a location string into standardized components.
@@ -600,12 +602,16 @@ def filter_candidates_by_location_fast(candidates: list[dict], location_filter: 
     # Normalize all filter locations to understand what we're filtering for
     filter_locations_normalized = [normalize_location(f) for f in location_filters]
 
-    # Pre-expand all filter locations
+    # Pre-expand all filter locations and normalize them for fast lookup
     expanded_filters = []
+    expanded_cities_lower = set()  # For fast city name lookup
     for filter_loc in location_filters:
         expanded = expand_region(filter_loc)
         if len(expanded) > 1:
-            expanded_filters.extend([(city, True) for city in expanded])
+            # Region expanded to multiple cities - add all to fast lookup set
+            for city in expanded:
+                expanded_cities_lower.add(city.lower())
+                expanded_filters.append((city, True))
         else:
             expanded_filters.append((filter_loc, False))
 
@@ -635,16 +641,31 @@ def filter_candidates_by_location_fast(candidates: list[dict], location_filter: 
             needs_resume_check.append(candidate)
             continue
 
-        # Normalize candidate location
+        # Normalize candidate location once
         candidate_norm = normalize_location(candidate_location)
 
-        # Check for exact match first
+        # OPTIMIZATION: For region filters (like Bay Area with 80 cities), use fast set lookup
+        # instead of calling locations_match 80 times
         is_match = False
-        for filter_loc, is_expanded in expanded_filters:
-            if locations_match(filter_loc, candidate_location, _expanded=is_expanded):
+
+        # Quick check: if candidate has a city and it's in our expanded cities set, it's a match
+        if candidate_norm["city"] and expanded_cities_lower:
+            candidate_city_lower = candidate_norm["city"].lower()
+            if candidate_city_lower in expanded_cities_lower:
                 matched.append(candidate)
                 is_match = True
-                break
+                continue
+
+        # If not a quick match, do full matching (for non-expanded filters or edge cases)
+        if not is_match:
+            for filter_loc, is_expanded in expanded_filters:
+                # Skip expanded filters if we already checked via set lookup
+                if is_expanded and expanded_cities_lower:
+                    continue
+                if locations_match(filter_loc, candidate_location, _expanded=is_expanded):
+                    matched.append(candidate)
+                    is_match = True
+                    break
 
         if is_match:
             continue

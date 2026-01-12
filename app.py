@@ -611,10 +611,17 @@ elif st.session_state.current_step == 2:
                     # on the country-filtered results
                     if st.session_state.location_filters:
                         location_filter = '\n'.join(st.session_state.location_filters)
+
+                        # Show progress for location filtering (can be slow for large regions like Bay Area)
+                        location_status = st.empty()
+                        location_status.info(f"Filtering by location: {', '.join(st.session_state.location_filters)}... (this may take a moment)")
+
                         candidates_matched_lever, candidates_need_resume_check = filter_candidates_by_location_fast(
                             current_candidates,
                             location_filter
                         )
+
+                        location_status.empty()
                         st.info(f"After location filter: {len(candidates_matched_lever)} exact matches, {len(candidates_need_resume_check)} need resume check")
                     else:
                         # No location filter, so all country-filtered candidates need resume check
