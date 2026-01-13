@@ -129,9 +129,10 @@ with st.sidebar:
         st.session_state.minimum_score = 0
         st.session_state.job_description = ""
         st.session_state.requirements = [
-            {"requirement": "5+ years Python experience", "weight": 40},
-            {"requirement": "Cloud infrastructure (AWS/GCP/Azure)", "weight": 30},
-            {"requirement": "Team leadership experience", "weight": 30}
+            {"requirement": "", "weight": 25},
+            {"requirement": "", "weight": 25},
+            {"requirement": "", "weight": 25},
+            {"requirement": "", "weight": 25}
         ]
         st.session_state.jd_weight = 50
         # Note: We don't reset filters (country_filters, location_filters, include_archived)
@@ -253,9 +254,10 @@ if st.session_state.analysis_results:
             st.session_state.minimum_score = 0
             st.session_state.job_description = ""
             st.session_state.requirements = [
-                {"requirement": "5+ years Python experience", "weight": 40},
-                {"requirement": "Cloud infrastructure (AWS/GCP/Azure)", "weight": 30},
-                {"requirement": "Team leadership experience", "weight": 30}
+                {"requirement": "", "weight": 25},
+                {"requirement": "", "weight": 25},
+                {"requirement": "", "weight": 25},
+                {"requirement": "", "weight": 25}
             ]
             st.session_state.jd_weight = 50
             st.rerun()
