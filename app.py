@@ -135,8 +135,9 @@ with st.sidebar:
             {"requirement": "", "weight": 25}
         ]
         st.session_state.jd_weight = 50
-        # Note: We don't reset filters (country_filters, location_filters, include_archived)
-        # so users can keep their preferred filters across searches
+        st.session_state.country_filters = []
+        st.session_state.location_filters = []
+        st.session_state.include_archived = False
         st.rerun()
 
     st.markdown("---")
@@ -260,6 +261,9 @@ if st.session_state.analysis_results:
                 {"requirement": "", "weight": 25}
             ]
             st.session_state.jd_weight = 50
+            st.session_state.country_filters = []
+            st.session_state.location_filters = []
+            st.session_state.include_archived = False
             st.rerun()
 
     st.header("📈 Candidate Rankings")
