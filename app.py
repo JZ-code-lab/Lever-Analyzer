@@ -596,7 +596,24 @@ elif st.session_state.current_step == 2:
                     except Exception as e:
                         st.warning(f"Failed to fetch candidates for {posting.get('text', 'Unknown')}: {str(e)}")
 
-            candidates = all_candidates
+            # Deduplicate candidates based on lever profile link and email
+            seen_candidates = {}
+            for candidate in all_candidates:
+                lever_url = get_candidate_lever_url(candidate)
+                email = get_candidate_email(candidate)
+
+                # Create unique key from lever URL (primary) and email (secondary)
+                unique_key = (lever_url, email)
+
+                if unique_key not in seen_candidates:
+                    seen_candidates[unique_key] = candidate
+
+            candidates = list(seen_candidates.values())
+
+            # Show deduplication results if duplicates were found
+            duplicates_removed = len(all_candidates) - len(candidates)
+            if duplicates_removed > 0:
+                st.info(f"Removed {duplicates_removed} duplicate candidate{'s' if duplicates_removed != 1 else ''}")
 
             # Show status of candidate fetching
             status_msg = f"Found {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}"

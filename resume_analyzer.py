@@ -96,20 +96,68 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
         technical_context += "3. Senior leaders may have less direct coding but should show technical depth\n"
         technical_context += "4. Use job requirements to determine what 'hands-on' means for this specific role\n"
 
+    # Build detailed requirements scoring instructions
+    requirements_scoring = ""
+    if weighted_requirements:
+        requirements_scoring = "\n\nREQUIREMENT SCORING INSTRUCTIONS:\n"
+        requirements_scoring += "For EACH requirement, you MUST score proportionally based on actual evidence:\n\n"
+        for r in weighted_requirements:
+            req_text = r['requirement']
+            req_weight = r['weight']
+            requirements_scoring += f"- \"{req_text}\" (max {req_weight} points):\n"
+            requirements_scoring += f"  * Full match (100%): {req_weight} points\n"
+            requirements_scoring += f"  * Strong match (75%): {int(req_weight * 0.75)} points\n"
+            requirements_scoring += f"  * Moderate match (50%): {int(req_weight * 0.50)} points\n"
+            requirements_scoring += f"  * Weak match (25%): {int(req_weight * 0.25)} points\n"
+            requirements_scoring += f"  * Very limited/no evidence (0-10%): 0-{int(req_weight * 0.10)} points\n\n"
+        requirements_scoring += "CRITICAL SCORING RULES:\n"
+        requirements_scoring += "- If you note 'very limited', 'minimal', or 'no documented' experience, score must be 0-10% of max (not 80%!)\n"
+        requirements_scoring += "- If you note 'some' or 'limited' experience, score should be 25-50% of max\n"
+        requirements_scoring += "- Only give 75-100% if candidate clearly demonstrates strong or extensive experience\n"
+        requirements_scoring += "- Be strict and honest - partial experience = partial score\n"
+
     # Build the prompt
     if technical_indicators:
-        prompt = f"""Analyze this resume.
-    COMPANY RESEARCH: {company_insight}
-    {technical_context}
-    {jd_str}{requirements_str}
-    Resume: {resume_text}
-    Return JSON with: overall_score (0-100), strengths, weaknesses, summary, technical_indicators_analysis (brief assessment of hands-on technical capabilities based on indicators provided)."""
+        prompt = f"""Analyze this resume and score STRICTLY based on evidence.
+
+COMPANY RESEARCH: {company_insight}
+
+{technical_context}
+
+{jd_str}WEIGHTED REQUIREMENTS:
+{requirements_str}
+{requirements_scoring}
+
+Resume: {resume_text}
+
+Return JSON with:
+- overall_score: (0-100) Sum of all requirement scores
+- requirement_scores: Object with each requirement text as key and its score as value
+- strengths: List of candidate's strengths
+- weaknesses: List of candidate's weaknesses
+- summary: Brief overall assessment
+- technical_indicators_analysis: Brief assessment of hands-on technical capabilities based on indicators provided
+
+IMPORTANT: Your requirement_scores must add up to the overall_score. Score strictly based on actual evidence in the resume."""
     else:
-        prompt = f"""Analyze this resume.
-    COMPANY RESEARCH: {company_insight}
-    {jd_str}{requirements_str}
-    Resume: {resume_text}
-    Return JSON with: overall_score (0-100), strengths, weaknesses, summary."""
+        prompt = f"""Analyze this resume and score STRICTLY based on evidence.
+
+COMPANY RESEARCH: {company_insight}
+
+{jd_str}WEIGHTED REQUIREMENTS:
+{requirements_str}
+{requirements_scoring}
+
+Resume: {resume_text}
+
+Return JSON with:
+- overall_score: (0-100) Sum of all requirement scores
+- requirement_scores: Object with each requirement text as key and its score as value
+- strengths: List of candidate's strengths
+- weaknesses: List of candidate's weaknesses
+- summary: Brief overall assessment
+
+IMPORTANT: Your requirement_scores must add up to the overall_score. Score strictly based on actual evidence in the resume."""
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception(is_rate_limit_error))
     def call_openai():
