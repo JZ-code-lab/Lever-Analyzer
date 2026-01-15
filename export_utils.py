@@ -64,6 +64,9 @@ def export_results_to_csv(results: list[dict]) -> str:
         # Get posting name if available
         posting_name = candidate.get("_posting_name", "")
 
+        # Get technical indicators if available
+        technical_indicators = analysis.get("technical_indicators_analysis", "")
+
         # Create hyperlink formulas for Excel/Google Sheets
         lever_hyperlink = f'=HYPERLINK("{lever_url}", "View Profile")' if lever_url else ""
         linkedin_hyperlink = f'=HYPERLINK("{linkedin_url}", "View LinkedIn")' if linkedin_url else ""
@@ -75,6 +78,7 @@ def export_results_to_csv(results: list[dict]) -> str:
             "Overall Score": overall_score,
             "Position": posting_name,
             "Summary": summary,
+            "Technical Indicators": technical_indicators,
             "Strengths": strengths_text,
             "Weaknesses": weaknesses_text,
             "JD Match Score": jd_match_score,

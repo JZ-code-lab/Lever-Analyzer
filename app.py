@@ -43,9 +43,12 @@ if "minimum_score" not in st.session_state:
     st.session_state.minimum_score = 0
 if "include_archived" not in st.session_state:
     st.session_state.include_archived = False
+if "require_hands_on_coding" not in st.session_state:
+    st.session_state.require_hands_on_coding = False
 
 lever_api_key = os.environ.get("LEVER_API_KEY", "")
 openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+github_api_token = os.environ.get("GITHUB_API_TOKEN", "")
 
 missing_keys = []
 if not lever_api_key:
@@ -56,6 +59,10 @@ if not openai_api_key:
 if missing_keys:
     st.error(f"Missing required API keys: {', '.join(missing_keys)}. Please add them to continue.")
     st.stop()
+
+# Optional: Show info if GitHub token not set and hands-on coding filter is enabled
+if not github_api_token and st.session_state.get("require_hands_on_coding", False):
+    st.info("💡 Optional: Set GITHUB_API_TOKEN environment variable for higher GitHub API rate limits (5000/hr vs 60/hr)")
 
 st.markdown("""
 <style>
@@ -138,6 +145,7 @@ with st.sidebar:
         st.session_state.country_filters = []
         st.session_state.location_filters = []
         st.session_state.include_archived = False
+        st.session_state.require_hands_on_coding = False
         st.rerun()
 
     st.markdown("---")
@@ -148,6 +156,13 @@ with st.sidebar:
         "Include Archived Candidates",
         value=st.session_state.include_archived,
         help="When checked, analysis will include both active and archived candidates. When unchecked, only active (non-archived) candidates will be analyzed."
+    )
+
+    st.markdown("")
+    st.session_state.require_hands_on_coding = st.checkbox(
+        "Strong indication of recent hands-on coding skills",
+        value=st.session_state.require_hands_on_coding,
+        help="When checked, analyzes candidates for GitHub activity, technical content creation (articles, videos, podcasts, talks), and hands-on coding evidence. Uses job requirements to determine relevance."
     )
 
     st.markdown("---")
@@ -264,6 +279,7 @@ if st.session_state.analysis_results:
             st.session_state.country_filters = []
             st.session_state.location_filters = []
             st.session_state.include_archived = False
+            st.session_state.require_hands_on_coding = False
             st.rerun()
 
     st.header("📈 Candidate Rankings")
@@ -339,6 +355,12 @@ if st.session_state.analysis_results:
                 with col1:
                     st.markdown("**Summary:**")
                     st.write(analysis.get("summary", "No summary available"))
+
+                    # Display technical indicators if available
+                    technical_analysis = analysis.get("technical_indicators_analysis")
+                    if technical_analysis:
+                        st.markdown("**Technical Indicators:**")
+                        st.info(technical_analysis)
 
                     st.markdown("**Strengths:**")
                     strengths = analysis.get("strengths", [])
@@ -721,6 +743,7 @@ elif st.session_state.current_step == 2:
                                 job_description=st.session_state.job_description if st.session_state.job_description.strip() else None,
                                 weighted_requirements=valid_requirements,
                                 jd_weight=st.session_state.jd_weight,
+                                require_hands_on_coding=st.session_state.require_hands_on_coding,
                                 progress_callback=update_progress
                             )
 
