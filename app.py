@@ -728,7 +728,13 @@ elif st.session_state.current_step == 2:
                         st.info(f"Final count after multi-source filtering: {len(candidates_with_resumes)} candidates match your filters ({len(candidates_matched_lever_with_resume)} from Lever, {len(filtered_by_resume)} from resume/phone).")
 
                     if candidates_with_resumes:
-                        st.info(f"Analyzing {len(candidates_with_resumes)} candidates with resumes...")
+                        candidates_before_analysis = len(candidates_with_resumes)
+
+                        # Show info about hands-on coding filter if enabled
+                        if st.session_state.require_hands_on_coding:
+                            st.info(f"🔍 Checking {candidates_before_analysis} candidates for hands-on coding indicators (GitHub, technical content)...")
+                        else:
+                            st.info(f"Analyzing {candidates_before_analysis} candidates with resumes...")
 
                         analysis_progress = st.progress(0)
                         analysis_status = st.empty()
@@ -746,6 +752,15 @@ elif st.session_state.current_step == 2:
                                 require_hands_on_coding=st.session_state.require_hands_on_coding,
                                 progress_callback=update_progress
                             )
+
+                            # Show filtering results if hands-on coding filter was enabled
+                            if st.session_state.require_hands_on_coding:
+                                candidates_after_filter = len(results)
+                                filtered_out = candidates_before_analysis - candidates_after_filter
+                                if filtered_out > 0:
+                                    st.warning(f"⚠️ Filtered out {filtered_out} candidate{'s' if filtered_out != 1 else ''} without strong hands-on coding indicators. {candidates_after_filter} candidate{'s' if candidates_after_filter != 1 else ''} met the requirement.")
+                                else:
+                                    st.success(f"✅ All {candidates_after_filter} candidate{'s' if candidates_after_filter != 1 else ''} have strong hands-on coding indicators.")
 
                             st.session_state.analysis_results = results
                             analysis_progress.empty()

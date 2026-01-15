@@ -129,16 +129,27 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
 
 def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_requirements, jd_weight, require_hands_on_coding=False, progress_callback=None):
     results = []
-    def process_candidate(item):
-        technical_indicators = None
 
-        # If hands-on coding filter enabled, enrich with technical indicators
-        if require_hands_on_coding:
-            from technical_enrichment import enrich_candidate_with_technical_indicators
+    # If hands-on coding filter is enabled, first enrich and filter candidates
+    if require_hands_on_coding:
+        from technical_enrichment import enrich_candidate_with_technical_indicators
+
+        filtered_candidates = []
+        for item in candidates_with_resumes:
             technical_indicators = enrich_candidate_with_technical_indicators(
                 item["candidate"],
                 item["resume_text"]
             )
+
+            # Only include candidates with meaningful technical indicators
+            if technical_indicators and has_strong_coding_indicators(technical_indicators):
+                item["technical_indicators"] = technical_indicators
+                filtered_candidates.append(item)
+
+        candidates_with_resumes = filtered_candidates
+
+    def process_candidate(item):
+        technical_indicators = item.get("technical_indicators") if require_hands_on_coding else None
 
         analysis = analyze_single_resume(
             item["resume_text"],
@@ -158,6 +169,44 @@ def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_
             except:
                 results.append({"candidate": candidates_with_resumes[futures[future]]["candidate"], "analysis": {"overall_score": 0}})
             if progress_callback: progress_callback(len(results), len(candidates_with_resumes))
-            
+
     results.sort(key=lambda x: x["analysis"].get("overall_score", 0), reverse=True)
     return results
+
+
+def has_strong_coding_indicators(technical_indicators: dict) -> bool:
+    """
+    Determine if technical indicators show strong evidence of hands-on coding.
+
+    Criteria:
+    - Active GitHub profile with repos, OR
+    - Technical content creation (articles, videos, podcasts, talks)
+
+    Args:
+        technical_indicators: Dict with github and/or content_mentions data
+
+    Returns:
+        True if candidate has strong coding indicators, False otherwise
+    """
+    if not technical_indicators:
+        return False
+
+    # Check GitHub activity
+    github_data = technical_indicators.get("github")
+    if github_data:
+        public_repos = github_data.get("public_repos", 0)
+        total_stars = github_data.get("total_stars", 0)
+
+        # Has meaningful GitHub presence (repos or popular projects)
+        if public_repos > 0 or total_stars > 0:
+            return True
+
+    # Check technical content creation
+    content_mentions = technical_indicators.get("content_mentions")
+    if content_mentions:
+        # Has created any form of technical content
+        total_mentions = sum(len(mentions) for mentions in content_mentions.values())
+        if total_mentions > 0:
+            return True
+
+    return False
