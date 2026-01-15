@@ -15,7 +15,9 @@
       "Bash(python test_api_params.py:*)",
       "Bash(python:*)",
       "WebSearch",
-      "WebFetch(domain:hire.lever.co)"
+      "WebFetch(domain:hire.lever.co)",
+      "Bash(find:*)",
+      "Bash(grep:*)"
     ]
   }
 }
