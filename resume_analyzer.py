@@ -100,21 +100,19 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
     requirements_scoring = ""
     if weighted_requirements:
         requirements_scoring = "\n\nREQUIREMENT SCORING INSTRUCTIONS:\n"
-        requirements_scoring += "For EACH requirement, you MUST score proportionally based on actual evidence:\n\n"
+        requirements_scoring += "For EACH requirement, use BINARY scoring - determine if the candidate HAS the requirement or DOES NOT have it:\n\n"
         for r in weighted_requirements:
             req_text = r['requirement']
             req_weight = r['weight']
-            requirements_scoring += f"- \"{req_text}\" (max {req_weight} points):\n"
-            requirements_scoring += f"  * Full match (100%): {req_weight} points\n"
-            requirements_scoring += f"  * Strong match (75%): {int(req_weight * 0.75)} points\n"
-            requirements_scoring += f"  * Moderate match (50%): {int(req_weight * 0.50)} points\n"
-            requirements_scoring += f"  * Weak match (25%): {int(req_weight * 0.25)} points\n"
-            requirements_scoring += f"  * Very limited/no evidence (0-10%): 0-{int(req_weight * 0.10)} points\n\n"
+            requirements_scoring += f"- \"{req_text}\":\n"
+            requirements_scoring += f"  * HAS the requirement: {req_weight} points (full credit)\n"
+            requirements_scoring += f"  * DOES NOT have the requirement: 0 points (no credit)\n\n"
         requirements_scoring += "CRITICAL SCORING RULES:\n"
-        requirements_scoring += "- If you note 'very limited', 'minimal', or 'no documented' experience, score must be 0-10% of max (not 80%!)\n"
-        requirements_scoring += "- If you note 'some' or 'limited' experience, score should be 25-50% of max\n"
-        requirements_scoring += "- Only give 75-100% if candidate clearly demonstrates strong or extensive experience\n"
-        requirements_scoring += "- Be strict and honest - partial experience = partial score\n"
+        requirements_scoring += "- This is an absolute assessment - either the candidate has the qualification or they don't\n"
+        requirements_scoring += "- NO partial credit - award either the full weight or zero points for each requirement\n"
+        requirements_scoring += "- Base your decision on clear evidence in the resume\n"
+        requirements_scoring += "- If evidence is ambiguous or unclear, default to NOT having the requirement (0 points)\n"
+        requirements_scoring += "- Only award full points when you can confidently say the candidate has the requirement\n"
 
     # Build the prompt
     if technical_indicators:
