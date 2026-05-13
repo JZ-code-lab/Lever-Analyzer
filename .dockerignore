@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+venv
+.claude
+.replit
+replit.md
+.DS_Store
+Procfile
+build.sh
+test_*.py
