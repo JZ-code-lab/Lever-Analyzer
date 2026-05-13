@@ -28,7 +28,7 @@ def get_company_research(company_name: str) -> str:
     except Exception:
         return ""
 
-def analyze_single_resume(resume_text: str, job_description: Optional[str], weighted_requirements: list[dict], jd_weight: float, technical_indicators: Optional[dict] = None) -> dict:
+def analyze_single_resume(resume_text: str, job_description: Optional[str], weighted_requirements: list[dict], jd_weight: float, technical_indicators: Optional[dict] = None, disqualifiers: Optional[list[str]] = None) -> dict:
     # --- 1. Extract Top 2 Companies ---
     try:
         name_extract = openai_client.chat.completions.create(
@@ -96,6 +96,20 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
         technical_context += "3. Senior leaders may have less direct coding but should show technical depth\n"
         technical_context += "4. Use job requirements to determine what 'hands-on' means for this specific role\n"
 
+    # Build disqualifier instructions
+    disqualifier_section = ""
+    active_disqualifiers = [d.strip() for d in (disqualifiers or []) if d and d.strip()]
+    if active_disqualifiers:
+        disqualifier_section = "\n\nDISQUALIFIERS (any one of these makes the candidate automatically unfit):\n"
+        for d in active_disqualifiers:
+            disqualifier_section += f"- \"{d}\"\n"
+        disqualifier_section += (
+            "\nIf the resume shows clear evidence of ANY disqualifier above, set "
+            "\"has_disqualifier\": true and \"disqualifier_reason\": <the matching disqualifier text>. "
+            "Otherwise set \"has_disqualifier\": false and omit disqualifier_reason. "
+            "Only flag a disqualifier when the evidence is clear; if unclear, do not flag.\n"
+        )
+
     # Build detailed requirements scoring instructions
     requirements_scoring = ""
     if weighted_requirements:
@@ -125,6 +139,7 @@ COMPANY RESEARCH: {company_insight}
 {jd_str}WEIGHTED REQUIREMENTS:
 {requirements_str}
 {requirements_scoring}
+{disqualifier_section}
 
 Resume: {resume_text}
 
@@ -145,6 +160,7 @@ COMPANY RESEARCH: {company_insight}
 {jd_str}WEIGHTED REQUIREMENTS:
 {requirements_str}
 {requirements_scoring}
+{disqualifier_section}
 
 Resume: {resume_text}
 
@@ -181,11 +197,18 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
             result["overall_score"] = total
         else:
             result["overall_score"] = float(result.get("overall_score") or 0)
+
+        # Disqualifier override: if the LLM flagged a disqualifier, force score to 0
+        if active_disqualifiers and result.get("has_disqualifier"):
+            result["overall_score"] = 0
+            if not result.get("disqualifier_reason"):
+                result["disqualifier_reason"] = "Matched a disqualifier"
+
         return result
     except:
         return {"overall_score": 0, "summary": "Analysis error", "error": True}
 
-def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_requirements, jd_weight, require_hands_on_coding=False, progress_callback=None):
+def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_requirements, jd_weight, require_hands_on_coding=False, progress_callback=None, disqualifiers=None):
     results = []
 
     # If hands-on coding filter is enabled, first enrich and filter candidates
@@ -214,7 +237,8 @@ def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_
             job_description,
             weighted_requirements,
             jd_weight,
-            technical_indicators=technical_indicators
+            technical_indicators=technical_indicators,
+            disqualifiers=disqualifiers
         )
         return {"candidate": item["candidate"], "analysis": analysis, "resume_text": item["resume_text"]}
 

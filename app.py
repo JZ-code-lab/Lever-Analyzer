@@ -3,6 +3,7 @@ import os
 from lever_client import (
     fetch_all_postings,
     fetch_candidates_for_posting,
+    fetch_all_stages,
     get_resume_text_for_candidate,
     get_candidate_name,
     get_candidate_email,
@@ -12,6 +13,28 @@ from lever_client import (
 from resume_analyzer import analyze_candidates_batch
 from location_utils import filter_candidates_with_resumes_by_location, filter_candidates_by_location_fast
 from export_utils import export_results_to_csv, filter_results_by_score
+
+# Stage filter options — first item is the special "archive" status flag,
+# the rest are active Lever stages (matched case-insensitively).
+STAGE_FILTER_OPTIONS = [
+    "archive",
+    "new applicant",
+    "new lead",
+    "pass resume screen",
+    "HR phone screen",
+    "tech screen 1",
+    "tech screen 2",
+    "onsite",
+    "coding test",
+]
+
+
+def default_stage_filters() -> dict:
+    return {s: True for s in STAGE_FILTER_OPTIONS}
+
+
+def default_disqualifiers() -> list:
+    return [{"text": ""}, {"text": ""}]
 
 st.set_page_config(
     page_title="Lever Analyzer",
@@ -51,8 +74,12 @@ if "country_filters" not in st.session_state:
     st.session_state.country_filters = []
 if "minimum_score" not in st.session_state:
     st.session_state.minimum_score = 0
-if "include_archived" not in st.session_state:
-    st.session_state.include_archived = False
+if "stage_filters" not in st.session_state:
+    st.session_state.stage_filters = default_stage_filters()
+if "disqualifiers" not in st.session_state:
+    st.session_state.disqualifiers = default_disqualifiers()
+if "lever_stages_cache" not in st.session_state:
+    st.session_state.lever_stages_cache = None
 if "require_hands_on_coding" not in st.session_state:
     st.session_state.require_hands_on_coding = False
 
@@ -154,19 +181,21 @@ with st.sidebar:
         st.session_state.jd_weight = 50
         st.session_state.country_filters = []
         st.session_state.location_filters = []
-        st.session_state.include_archived = False
+        st.session_state.stage_filters = default_stage_filters()
+        st.session_state.disqualifiers = default_disqualifiers()
         st.session_state.require_hands_on_coding = False
         st.rerun()
 
     st.markdown("---")
     st.header("🌍 Filters")
     st.markdown("---")
-    st.markdown("**Candidate Status**")
-    st.session_state.include_archived = st.checkbox(
-        "Include Archived Candidates",
-        value=st.session_state.include_archived,
-        help="When checked, analysis will include both active and archived candidates. When unchecked, only active (non-archived) candidates will be analyzed."
-    )
+    st.markdown("**Include candidates in the following stages:**")
+    for stage_name in STAGE_FILTER_OPTIONS:
+        st.session_state.stage_filters[stage_name] = st.checkbox(
+            stage_name,
+            value=st.session_state.stage_filters.get(stage_name, True),
+            key=f"stage_filter_{stage_name}"
+        )
 
     st.markdown("")
     st.session_state.require_hands_on_coding = st.checkbox(
@@ -288,7 +317,8 @@ if st.session_state.analysis_results:
             st.session_state.jd_weight = 50
             st.session_state.country_filters = []
             st.session_state.location_filters = []
-            st.session_state.include_archived = False
+            st.session_state.stage_filters = default_stage_filters()
+            st.session_state.disqualifiers = default_disqualifiers()
             st.session_state.require_hands_on_coding = False
             st.rerun()
 
@@ -346,8 +376,12 @@ if st.session_state.analysis_results:
             analysis = result["analysis"]
 
             score = analysis.get("overall_score", 0)
+            is_disqualified = bool(analysis.get("has_disqualifier"))
+            disqualifier_reason = analysis.get("disqualifier_reason", "")
 
-            if score >= 80:
+            if is_disqualified:
+                score_color = "⛔"
+            elif score >= 80:
                 score_color = "🟢"
             elif score >= 60:
                 score_color = "🟡"
@@ -359,7 +393,8 @@ if st.session_state.analysis_results:
             linkedin = get_candidate_linkedin(candidate)
             lever_url = get_candidate_lever_url(candidate)
 
-            with st.expander(f"#{original_rank} {score_color} **{name}** - Score: {score}/100", expanded=(original_rank <= 3)):
+            header_suffix = " — DISQUALIFIED" if is_disqualified else ""
+            with st.expander(f"#{original_rank} {score_color} **{name}** - Score: {score}/100{header_suffix}", expanded=(original_rank <= 3)):
                 col1, col2 = st.columns([3, 2])
 
                 with col1:
@@ -373,6 +408,9 @@ if st.session_state.analysis_results:
 
                 with col2:
                     st.metric("Overall Score", f"{score}/100")
+
+                    if is_disqualified:
+                        st.error(f"⛔ **Disqualified:** {disqualifier_reason or 'Matched a disqualifier.'}")
 
                     if analysis.get("jd_match_score") is not None:
                         st.write(f"JD Match: {analysis.get('jd_match_score')}/100")
@@ -546,9 +584,40 @@ elif st.session_state.current_step == 2:
             if st.button("+ Add Requirement"):
                 st.session_state.requirements.append({"requirement": "", "weight": 0})
                 st.rerun()
-        
+
         valid_requirements = [r for r in st.session_state.requirements if r["requirement"].strip()]
         valid_weight = sum(r["weight"] for r in valid_requirements)
+
+        # Disqualifiers (optional)
+        st.markdown("---")
+        st.markdown("**Disqualifiers** (Optional)")
+        st.caption("If a candidate has any of these, they automatically score 0/100.")
+
+        disqualifiers_to_remove = []
+        for i, dq in enumerate(st.session_state.disqualifiers):
+            dq_col1, dq_col2 = st.columns([5, 0.5])
+            with dq_col1:
+                st.session_state.disqualifiers[i]["text"] = st.text_input(
+                    f"Disqualifier {i+1}",
+                    value=dq["text"],
+                    key=f"disqualifier_{i}",
+                    label_visibility="collapsed",
+                    placeholder="e.g., No bachelor's degree"
+                )
+            with dq_col2:
+                if len(st.session_state.disqualifiers) > 1:
+                    if st.button("✕", key=f"remove_disqualifier_{i}"):
+                        disqualifiers_to_remove.append(i)
+
+        for i in reversed(disqualifiers_to_remove):
+            st.session_state.disqualifiers.pop(i)
+            st.rerun()
+
+        if st.button("+ Add Disqualifier"):
+            st.session_state.disqualifiers.append({"text": ""})
+            st.rerun()
+
+        active_disqualifiers = [d["text"].strip() for d in st.session_state.disqualifiers if d["text"].strip()]
         
         st.markdown("---")
         
@@ -590,13 +659,40 @@ elif st.session_state.current_step == 2:
             st.info("Add weighted requirements (totaling 100%) or a job description to continue.")
         
         if st.button("🔍 Analyze Candidates", type="primary", use_container_width=True, disabled=not can_proceed):
+            stage_filters = st.session_state.stage_filters
+            include_archived = stage_filters.get("archive", False)
+            active_stage_names = [s for s in STAGE_FILTER_OPTIONS if s != "archive" and stage_filters.get(s, False)]
+            include_active = bool(active_stage_names)
+
+            if not include_active and not include_archived:
+                st.warning("Select at least one stage in the sidebar before analyzing.")
+                st.stop()
+
+            # Build a stage_id -> stage_name map once (cached for the session)
+            try:
+                if st.session_state.lever_stages_cache is None:
+                    st.session_state.lever_stages_cache = fetch_all_stages()
+                stage_id_to_name = {
+                    s.get("id"): s.get("text", "")
+                    for s in (st.session_state.lever_stages_cache or [])
+                }
+            except Exception as e:
+                st.warning(f"Could not fetch Lever stages: {e}. Stage filtering may be inaccurate.")
+                stage_id_to_name = {}
+
+            active_stage_names_lower = {s.strip().lower() for s in active_stage_names}
+
             all_candidates = []
 
             with st.spinner("Fetching candidates from Lever..."):
                 for posting in st.session_state.selected_postings:
                     posting_id = posting.get("id")
                     try:
-                        candidates = fetch_candidates_for_posting(posting_id, st.session_state.include_archived)
+                        candidates = fetch_candidates_for_posting(
+                            posting_id,
+                            include_active=include_active,
+                            include_archived=include_archived,
+                        )
                         for c in candidates:
                             c["_posting_name"] = posting.get("text", "Unknown")
                         all_candidates.extend(candidates)
@@ -617,22 +713,35 @@ elif st.session_state.current_step == 2:
 
             candidates = list(seen_candidates.values())
 
+            # Filter by stage: archived candidates kept iff "archive" is checked;
+            # active candidates kept iff their stage matches one of the checked stages.
+            stage_filtered = []
+            for c in candidates:
+                if c.get("archived"):
+                    if include_archived:
+                        stage_filtered.append(c)
+                    continue
+                stage_value = c.get("stage")
+                if isinstance(stage_value, dict):
+                    stage_name = stage_value.get("text", "")
+                else:
+                    stage_name = stage_id_to_name.get(stage_value, "")
+                if stage_name.strip().lower() in active_stage_names_lower:
+                    stage_filtered.append(c)
+
+            candidates = stage_filtered
+
             # Show deduplication results if duplicates were found
             duplicates_removed = len(all_candidates) - len(candidates)
             if duplicates_removed > 0:
-                st.info(f"Removed {duplicates_removed} duplicate candidate{'s' if duplicates_removed != 1 else ''}")
+                st.info(f"Removed {duplicates_removed} duplicate or out-of-stage candidate{'s' if duplicates_removed != 1 else ''}")
 
             # Show status of candidate fetching
-            status_msg = f"Found {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}"
-            if st.session_state.include_archived:
-                status_msg += " (including archived)"
-            else:
-                status_msg += " (active only)"
-            st.info(status_msg)
+            selected_stages_summary = ", ".join([s for s in STAGE_FILTER_OPTIONS if stage_filters.get(s, False)])
+            st.info(f"Found {len(candidates)} candidate{'s' if len(candidates) != 1 else ''} in stages: {selected_stages_summary}")
 
             if not candidates:
-                candidate_type = "candidates" if st.session_state.include_archived else "active candidates"
-                st.warning(f"No {candidate_type} found for the selected positions.")
+                st.warning("No candidates found in the selected stages for the chosen positions.")
             else:
                 # OPTIMIZATION: If location filters exist, do fast pre-filter before fetching resumes
                 # This dramatically reduces resume fetching time by filtering out candidates from
@@ -774,7 +883,8 @@ elif st.session_state.current_step == 2:
                                 weighted_requirements=valid_requirements,
                                 jd_weight=st.session_state.jd_weight,
                                 require_hands_on_coding=st.session_state.require_hands_on_coding,
-                                progress_callback=update_progress
+                                progress_callback=update_progress,
+                                disqualifiers=active_disqualifiers
                             )
 
                             # Show filtering results if hands-on coding filter was enabled

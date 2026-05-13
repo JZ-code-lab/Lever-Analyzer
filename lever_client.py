@@ -47,28 +47,56 @@ def fetch_all_postings() -> list[dict]:
     return postings
 
 
-def fetch_candidates_for_posting(posting_id: str, include_archived: bool = False) -> list[dict]:
+def fetch_candidates_for_posting(posting_id: str, include_active: bool = True, include_archived: bool = False) -> list[dict]:
     """
     Fetch candidates for a specific posting.
 
     Args:
         posting_id: The Lever posting ID
-        include_archived: If True, include both active and archived applications for the posting.
-                         If False, only include active (non-archived) applications.
+        include_active: If True, fetch active (non-archived) candidates.
+        include_archived: If True, fetch archived candidates.
 
     Returns:
         List of candidate dictionaries
     """
     candidates = []
 
-    # Fetch active candidates (default behavior)
-    candidates.extend(_fetch_candidates_with_status(posting_id, archived=False))
+    if include_active:
+        candidates.extend(_fetch_candidates_with_status(posting_id, archived=False))
 
-    # If include_archived is True, also fetch archived candidates
     if include_archived:
         candidates.extend(_fetch_candidates_with_status(posting_id, archived=True))
 
     return candidates
+
+
+def fetch_all_stages() -> list[dict]:
+    """Fetch all stages defined in the Lever account."""
+    stages = []
+    offset = None
+
+    while True:
+        params = {"limit": 100}
+        if offset:
+            params["offset"] = offset
+
+        response = requests.get(
+            f"{LEVER_API_BASE}/stages",
+            headers=get_auth_header(),
+            params=params
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch stages: {response.text}")
+
+        data = response.json()
+        stages.extend(data.get("data", []))
+
+        if not data.get("hasNext"):
+            break
+        offset = data.get("next")
+
+    return stages
 
 
 def _fetch_candidates_with_status(posting_id: str, archived: bool) -> list[dict]:
