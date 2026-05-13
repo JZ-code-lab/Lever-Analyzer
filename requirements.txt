@@ -1,6 +1,7 @@
 openai
 pandas
 pdfplumber
+python-docx
 requests
 streamlit
 tenacity

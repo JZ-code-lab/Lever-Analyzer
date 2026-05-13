@@ -2,6 +2,7 @@ import os
 import requests
 from typing import Optional
 import pdfplumber
+from docx import Document
 from io import BytesIO
 import base64
 
@@ -156,29 +157,71 @@ def fetch_candidate_resumes(opportunity_id: str) -> list[dict]:
 
 
 def download_and_parse_resume(file_download_url: str) -> Optional[str]:
-    """Download a resume file and extract text content."""
+    """Download a resume file and extract text content.
+
+    Handles PDF and DOCX. Returns None for unknown binary formats rather
+    than dumping raw bytes (which corrupts the LLM prompt and the UI).
+    """
     try:
         response = requests.get(
             file_download_url,
             headers=get_auth_header()
         )
-        
+
         if response.status_code != 200:
             return None
-        
-        content_type = response.headers.get("Content-Type", "")
-        
-        if "pdf" in content_type.lower() or file_download_url.lower().endswith(".pdf"):
-            with pdfplumber.open(BytesIO(response.content)) as pdf:
+
+        content = response.content
+        content_type = response.headers.get("Content-Type", "").lower()
+        url_lower = file_download_url.lower()
+
+        # PDF — by magic bytes, content-type, or extension
+        is_pdf = (
+            content[:5] == b"%PDF-"
+            or "pdf" in content_type
+            or url_lower.endswith(".pdf")
+        )
+        if is_pdf:
+            with pdfplumber.open(BytesIO(content)) as pdf:
                 text = ""
                 for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n"
                 return text.strip() if text else None
-        else:
+
+        # DOCX — Office Open XML is a ZIP archive (magic bytes "PK\x03\x04").
+        # If content sniffs as a ZIP, we attempt DOCX parsing; if the file is
+        # actually an xlsx/pptx the parser throws and we return None below.
+        is_docx = (
+            "officedocument.wordprocessingml" in content_type
+            or url_lower.endswith(".docx")
+            or content[:4] == b"PK\x03\x04"
+        )
+        if is_docx:
+            try:
+                doc = Document(BytesIO(content))
+                parts = [p.text for p in doc.paragraphs if p.text]
+                for table in doc.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            if cell.text:
+                                parts.append(cell.text)
+                text = "\n".join(parts).strip()
+                return text or None
+            except Exception as e:
+                print(f"Error parsing DOCX: {e}")
+                return None
+
+        # Plain-text content types are safe to decode as text
+        if content_type.startswith("text/") or "text" in content_type:
             return response.text
-            
+
+        # Unknown binary (e.g. legacy .doc, images, etc.) — skip rather
+        # than feed garbage to GPT or display it.
+        print(f"Skipping unparseable resume (content-type={content_type!r}, url={file_download_url})")
+        return None
+
     except Exception as e:
         print(f"Error parsing resume: {e}")
         return None
