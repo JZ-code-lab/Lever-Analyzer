@@ -168,7 +168,19 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
     
     try:
         result = json.loads(call_openai())
-        result["overall_score"] = float(result.get("overall_score") or 0)
+        # Recompute overall_score from requirement_scores — the LLM's own sum
+        # is unreliable (it frequently returns 100 even when the parts sum lower).
+        req_scores = result.get("requirement_scores") or {}
+        if isinstance(req_scores, dict) and req_scores:
+            total = 0.0
+            for v in req_scores.values():
+                try:
+                    total += float(v)
+                except (TypeError, ValueError):
+                    pass
+            result["overall_score"] = total
+        else:
+            result["overall_score"] = float(result.get("overall_score") or 0)
         return result
     except:
         return {"overall_score": 0, "summary": "Analysis error", "error": True}
