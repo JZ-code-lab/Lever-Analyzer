@@ -194,7 +194,7 @@ def get_resume_text_for_candidate(opportunity_id: str) -> Optional[str]:
     resumes = fetch_candidate_resumes(opportunity_id)
     
     for resume in resumes:
-        file_info = resume.get("file", {})
+        file_info = resume.get("file") or {}
         download_url = file_info.get("downloadUrl")
         
         if download_url:
