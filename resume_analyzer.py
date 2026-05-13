@@ -216,7 +216,7 @@ def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_
             jd_weight,
             technical_indicators=technical_indicators
         )
-        return {"candidate": item["candidate"], "analysis": analysis}
+        return {"candidate": item["candidate"], "analysis": analysis, "resume_text": item["resume_text"]}
 
     # max_workers=3 is safer when doing web searches to avoid being blocked
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -225,7 +225,8 @@ def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_
             try:
                 results.append(future.result())
             except:
-                results.append({"candidate": candidates_with_resumes[futures[future]]["candidate"], "analysis": {"overall_score": 0}})
+                failed_item = candidates_with_resumes[futures[future]]
+                results.append({"candidate": failed_item["candidate"], "analysis": {"overall_score": 0}, "resume_text": failed_item.get("resume_text", "")})
             if progress_callback: progress_callback(len(results), len(candidates_with_resumes))
 
     results.sort(key=lambda x: x["analysis"].get("overall_score", 0), reverse=True)

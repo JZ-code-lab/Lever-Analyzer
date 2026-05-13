@@ -19,6 +19,16 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] { min-width: 240px !important; max-width: 240px !important; }
+    [data-testid="stSidebar"] > div:first-child { width: 240px !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if "postings" not in st.session_state:
     st.session_state.postings = None
 if "selected_postings" not in st.session_state:
@@ -350,13 +360,26 @@ if st.session_state.analysis_results:
             lever_url = get_candidate_lever_url(candidate)
 
             with st.expander(f"#{original_rank} {score_color} **{name}** - Score: {score}/100", expanded=(original_rank <= 3)):
-                col1, col2 = st.columns([2, 1])
+                col1, col2 = st.columns([3, 2])
 
                 with col1:
+                    st.markdown("**Resume:**")
+                    resume_text = result.get("resume_text", "")
+                    with st.container(height=600, border=True):
+                        if resume_text:
+                            st.text(resume_text)
+                        else:
+                            st.caption("No resume text available for this candidate.")
+
+                with col2:
+                    st.metric("Overall Score", f"{score}/100")
+
+                    if analysis.get("jd_match_score") is not None:
+                        st.write(f"JD Match: {analysis.get('jd_match_score')}/100")
+
                     st.markdown("**Summary:**")
                     st.write(analysis.get("summary", "No summary available"))
 
-                    # Display technical indicators if available
                     technical_analysis = analysis.get("technical_indicators_analysis")
                     if technical_analysis:
                         st.markdown("**Technical Indicators:**")
@@ -365,7 +388,6 @@ if st.session_state.analysis_results:
                     st.markdown("**Strengths:**")
                     strengths = analysis.get("strengths", [])
                     for strength in strengths:
-                        # Handle both string and dict formats
                         if isinstance(strength, str):
                             st.markdown(f"✅ {strength}")
                         elif isinstance(strength, dict):
@@ -377,7 +399,6 @@ if st.session_state.analysis_results:
                     st.markdown("**Weaknesses:**")
                     weaknesses = analysis.get("weaknesses", [])
                     for weakness in weaknesses:
-                        # Handle both string and dict formats
                         if isinstance(weakness, str):
                             st.markdown(f"⚠️ {weakness}")
                         elif isinstance(weakness, dict):
@@ -385,20 +406,6 @@ if st.session_state.analysis_results:
                             st.markdown(f"⚠️ {text}")
                         else:
                             st.markdown(f"⚠️ {weakness}")
-
-                with col2:
-                    st.markdown("**Score Breakdown:**")
-                    st.metric("Overall Score", f"{score}/100")
-
-                    if analysis.get("jd_match_score") is not None:
-                        st.write(f"JD Match: {analysis.get('jd_match_score')}/100")
-
-                    req_scores = analysis.get("requirement_scores", {})
-                    if req_scores:
-                        st.markdown("**Requirement Scores:**")
-                        for req, req_score in req_scores.items():
-                            display_req = req[:30] + "..." if len(req) > 30 else req
-                            st.write(f"• {display_req}: {req_score}")
 
                     st.divider()
 
