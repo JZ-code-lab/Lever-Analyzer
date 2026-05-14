@@ -20,6 +20,7 @@ STAGE_FILTER_OPTIONS = [
     "archive",
     "new applicant",
     "new lead",
+    "reached out",
     "pass resume screen",
     "HR phone screen",
     "tech screen 1",
@@ -30,7 +31,7 @@ STAGE_FILTER_OPTIONS = [
 
 
 def default_stage_filters() -> dict:
-    return {s: True for s in STAGE_FILTER_OPTIONS}
+    return {s: False for s in STAGE_FILTER_OPTIONS}
 
 
 def default_disqualifiers() -> list:
@@ -193,7 +194,7 @@ with st.sidebar:
     for stage_name in STAGE_FILTER_OPTIONS:
         st.session_state.stage_filters[stage_name] = st.checkbox(
             stage_name,
-            value=st.session_state.stage_filters.get(stage_name, True),
+            value=st.session_state.stage_filters.get(stage_name, False),
             key=f"stage_filter_{stage_name}"
         )
 
