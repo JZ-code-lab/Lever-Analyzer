@@ -4,6 +4,9 @@ from lever_client import (
     fetch_all_postings,
     fetch_candidates_for_posting,
     fetch_all_stages,
+    fetch_archive_reasons,
+    change_candidate_stage,
+    archive_candidate,
     get_resume_text_for_candidate,
     get_candidate_name,
     get_candidate_email,
@@ -81,11 +84,17 @@ if "disqualifiers" not in st.session_state:
     st.session_state.disqualifiers = default_disqualifiers()
 if "lever_stages_cache" not in st.session_state:
     st.session_state.lever_stages_cache = None
+if "archive_reasons_cache" not in st.session_state:
+    st.session_state.archive_reasons_cache = None
+if "recent_stage_changes" not in st.session_state:
+    # Maps opportunity_id -> human-readable note like "Moved to onsite" or "Archived: Not qualified"
+    st.session_state.recent_stage_changes = {}
 if "require_hands_on_coding" not in st.session_state:
     st.session_state.require_hands_on_coding = False
 
 lever_api_key = os.environ.get("LEVER_API_KEY", "")
 openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+lever_perform_as_user_id = os.environ.get("LEVER_PERFORM_AS_USER_ID", "")
 github_api_token = os.environ.get("GITHUB_API_TOKEN", "")
 
 missing_keys = []
@@ -456,6 +465,98 @@ if st.session_state.analysis_results:
 
                     if email:
                         st.write(f"📧 {email}")
+
+                    # ----- Change Stage -----
+                    st.divider()
+                    st.markdown("**Change Stage in Lever:**")
+
+                    opportunity_id = candidate.get("id", "")
+                    stages_cache = st.session_state.get("lever_stages_cache") or []
+                    stage_id_to_name = {s.get("id"): s.get("text", "") for s in stages_cache}
+
+                    # Current stage label (or "archived")
+                    if candidate.get("archived"):
+                        current_stage_label = "(archived)"
+                    else:
+                        stage_value = candidate.get("stage")
+                        if isinstance(stage_value, dict):
+                            current_stage_label = stage_value.get("text", "(unknown)")
+                        else:
+                            current_stage_label = stage_id_to_name.get(stage_value, "(unknown)")
+                    st.caption(f"Currently: {current_stage_label}")
+
+                    # Recent-change indicator (persists across reruns)
+                    recent_change = st.session_state.recent_stage_changes.get(opportunity_id)
+                    if recent_change:
+                        st.success(f"✓ {recent_change}")
+
+                    # Move-to dropdown — put "archive" last so it's harder to misclick
+                    stage_move_options = [s for s in STAGE_FILTER_OPTIONS if s != "archive"] + ["archive"]
+                    selected_target = st.selectbox(
+                        "Move to",
+                        options=["(no change)"] + stage_move_options,
+                        index=0,
+                        key=f"stage_target_{opportunity_id}",
+                        label_visibility="collapsed",
+                    )
+
+                    selected_reason_id = None
+                    selected_reason_label = ""
+                    if selected_target == "archive":
+                        # Lazy-load archive reasons on first use
+                        if st.session_state.archive_reasons_cache is None:
+                            try:
+                                st.session_state.archive_reasons_cache = fetch_archive_reasons()
+                            except Exception as fetch_err:
+                                st.error(f"Could not load archive reasons: {fetch_err}")
+                                st.session_state.archive_reasons_cache = []
+                        reasons = st.session_state.archive_reasons_cache or []
+                        if reasons:
+                            reason_labels = [r.get("text", "") for r in reasons]
+                            selected_reason_label = st.selectbox(
+                                "Archive reason",
+                                options=reason_labels,
+                                key=f"archive_reason_{opportunity_id}",
+                            )
+                            selected_reason_id = next(
+                                (r.get("id") for r in reasons if r.get("text") == selected_reason_label),
+                                None,
+                            )
+                        else:
+                            st.warning("No archive reasons available in this Lever account.")
+
+                    # Apply button — only shown once a real target is selected
+                    if selected_target != "(no change)":
+                        apply_disabled = (
+                            not lever_perform_as_user_id
+                            or (selected_target == "archive" and not selected_reason_id)
+                        )
+                        if not lever_perform_as_user_id:
+                            st.caption("⚠️ Set LEVER_PERFORM_AS_USER_ID on Render to enable stage changes.")
+                        if st.button("Apply", key=f"apply_stage_{opportunity_id}", disabled=apply_disabled, type="primary"):
+                            try:
+                                if selected_target == "archive":
+                                    archive_candidate(opportunity_id, selected_reason_id, lever_perform_as_user_id)
+                                    candidate["archived"] = {"reason": selected_reason_id}
+                                    st.session_state.recent_stage_changes[opportunity_id] = f"Archived: {selected_reason_label}"
+                                else:
+                                    # Resolve UI stage name -> Lever stage ID (case-insensitive match)
+                                    target_lower = selected_target.strip().lower()
+                                    target_stage_id = next(
+                                        (s.get("id") for s in stages_cache
+                                         if s.get("text", "").strip().lower() == target_lower),
+                                        None,
+                                    )
+                                    if not target_stage_id:
+                                        st.error(f"Could not find a Lever stage matching '{selected_target}'.")
+                                    else:
+                                        change_candidate_stage(opportunity_id, target_stage_id, lever_perform_as_user_id)
+                                        candidate["stage"] = target_stage_id
+                                        candidate["archived"] = None
+                                        st.session_state.recent_stage_changes[opportunity_id] = f"Moved to {selected_target}"
+                                st.rerun()
+                            except Exception as apply_err:
+                                st.error(f"Update failed: {apply_err}")
 
 elif st.session_state.current_step == 1:
     col1, col2, col3 = st.columns([1, 3, 1])

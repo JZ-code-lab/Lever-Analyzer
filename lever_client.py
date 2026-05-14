@@ -102,6 +102,60 @@ def fetch_all_stages() -> list[dict]:
     return stages
 
 
+def fetch_archive_reasons() -> list[dict]:
+    """Fetch all archive reasons defined in the Lever account."""
+    reasons = []
+    offset = None
+
+    while True:
+        params = {"limit": 100}
+        if offset:
+            params["offset"] = offset
+
+        response = requests.get(
+            f"{LEVER_API_BASE}/archive_reasons",
+            headers=get_auth_header(),
+            params=params,
+        )
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch archive reasons: {response.text}")
+
+        data = response.json()
+        reasons.extend(data.get("data", []))
+
+        if not data.get("hasNext"):
+            break
+        offset = data.get("next")
+
+    return reasons
+
+
+def change_candidate_stage(opportunity_id: str, stage_id: str, perform_as: str) -> dict:
+    """Move an opportunity to a new stage. Returns the updated opportunity."""
+    response = requests.post(
+        f"{LEVER_API_BASE}/opportunities/{opportunity_id}/stage",
+        headers=get_auth_header(),
+        params={"perform_as": perform_as},
+        json={"stage": stage_id},
+    )
+    if response.status_code not in (200, 201):
+        raise Exception(f"Failed to change stage (HTTP {response.status_code}): {response.text}")
+    return response.json().get("data", {})
+
+
+def archive_candidate(opportunity_id: str, reason_id: str, perform_as: str) -> dict:
+    """Archive an opportunity with the given reason. Returns the updated opportunity."""
+    response = requests.post(
+        f"{LEVER_API_BASE}/opportunities/{opportunity_id}/archived",
+        headers=get_auth_header(),
+        params={"perform_as": perform_as},
+        json={"reason": reason_id},
+    )
+    if response.status_code not in (200, 201):
+        raise Exception(f"Failed to archive candidate (HTTP {response.status_code}): {response.text}")
+    return response.json().get("data", {})
+
+
 def _fetch_candidates_with_status(posting_id: str, archived: bool) -> list[dict]:
     """
     Internal function to fetch candidates with a specific archived status.
