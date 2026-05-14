@@ -376,6 +376,115 @@ if st.session_state.analysis_results:
 
     st.markdown("---")
 
+    # ----- Bulk archive panel -----
+    disqualified_results = [r for r in all_results if r.get("analysis", {}).get("has_disqualifier")]
+    not_yet_archived_disq = [r for r in disqualified_results if not r.get("candidate", {}).get("archived")]
+
+    with st.expander(f"⚡ Bulk Archive ({len(not_yet_archived_disq)} disqualified, not yet archived)", expanded=False):
+        if not lever_perform_as_user_id:
+            st.warning("Set LEVER_PERFORM_AS_USER_ID on Render to enable bulk archive.")
+        else:
+            bulk_criterion = st.radio(
+                "Select candidates to archive:",
+                options=["Disqualified candidates", "Candidates with score below threshold"],
+                key="bulk_criterion",
+                horizontal=True,
+            )
+
+            if bulk_criterion == "Disqualified candidates":
+                targets = not_yet_archived_disq
+                st.caption(f"{len(targets)} candidate{'s' if len(targets) != 1 else ''} marked as disqualified and not yet archived.")
+            else:
+                threshold = st.slider(
+                    "Archive candidates with score strictly less than:",
+                    min_value=0, max_value=100, value=30, step=5,
+                    key="bulk_score_threshold",
+                )
+                targets = [
+                    r for r in all_results
+                    if not r.get("candidate", {}).get("archived")
+                    and r.get("analysis", {}).get("overall_score", 0) < threshold
+                ]
+                st.caption(f"{len(targets)} candidate{'s' if len(targets) != 1 else ''} with score < {threshold} and not yet archived.")
+
+            # Reason picker (lazy-load reasons)
+            if st.session_state.archive_reasons_cache is None:
+                try:
+                    st.session_state.archive_reasons_cache = fetch_archive_reasons()
+                except Exception as fetch_err:
+                    st.error(f"Could not load archive reasons: {fetch_err}")
+                    st.session_state.archive_reasons_cache = []
+
+            reasons = st.session_state.archive_reasons_cache or []
+            if not reasons:
+                st.warning("No archive reasons available in this Lever account.")
+            else:
+                reason_labels = [r.get("text", "") for r in reasons]
+                bulk_reason_label = st.selectbox(
+                    "Archive reason for all selected:",
+                    options=reason_labels,
+                    key="bulk_archive_reason",
+                )
+                bulk_reason_id = next(
+                    (r.get("id") for r in reasons if r.get("text") == bulk_reason_label),
+                    None,
+                )
+
+                # Two-step confirmation: first click arms, second click fires
+                arm_key = "bulk_archive_armed"
+                if arm_key not in st.session_state:
+                    st.session_state[arm_key] = False
+
+                if not targets:
+                    st.info("No candidates match the criteria above.")
+                elif not st.session_state[arm_key]:
+                    if st.button(f"Archive {len(targets)} candidate{'s' if len(targets) != 1 else ''}", type="primary", key="bulk_archive_arm"):
+                        st.session_state[arm_key] = True
+                        st.rerun()
+                else:
+                    st.warning(f"About to archive {len(targets)} candidate{'s' if len(targets) != 1 else ''} with reason: **{bulk_reason_label}**. This calls Lever's API for each candidate.")
+                    col_confirm, col_cancel = st.columns(2)
+                    with col_confirm:
+                        confirm = st.button(f"✅ Confirm archive {len(targets)}", type="primary", key="bulk_archive_confirm")
+                    with col_cancel:
+                        cancel = st.button("Cancel", key="bulk_archive_cancel")
+
+                    if cancel:
+                        st.session_state[arm_key] = False
+                        st.rerun()
+
+                    if confirm and bulk_reason_id:
+                        progress = st.progress(0)
+                        status = st.empty()
+                        succeeded = 0
+                        failed = []
+                        for i, r in enumerate(targets):
+                            cid = r.get("candidate", {}).get("id", "")
+                            cname = get_candidate_name(r.get("candidate", {}))
+                            status.text(f"Archiving {i + 1}/{len(targets)}: {cname}")
+                            try:
+                                archive_candidate(cid, bulk_reason_id, lever_perform_as_user_id)
+                                # Update local state so UI reflects archive without re-fetching
+                                r["candidate"]["archived"] = {"reason": bulk_reason_id}
+                                st.session_state.recent_stage_changes[cid] = f"Archived: {bulk_reason_label}"
+                                succeeded += 1
+                            except Exception as bulk_err:
+                                failed.append((cname, str(bulk_err)))
+                            progress.progress((i + 1) / len(targets))
+
+                        progress.empty()
+                        status.empty()
+                        st.session_state[arm_key] = False
+
+                        if failed:
+                            st.error(f"Archived {succeeded}/{len(targets)}. {len(failed)} failed:")
+                            for fname, ferr in failed[:10]:
+                                st.caption(f"• {fname}: {ferr}")
+                            if len(failed) > 10:
+                                st.caption(f"...and {len(failed) - 10} more.")
+                        else:
+                            st.success(f"✅ Archived all {succeeded} candidate{'s' if succeeded != 1 else ''}.")
+
     if not results:
         st.warning(f"No candidates found with score ≥ {st.session_state.minimum_score}. Try adjusting the minimum score filter.")
     else:
