@@ -376,114 +376,228 @@ if st.session_state.analysis_results:
 
     st.markdown("---")
 
-    # ----- Bulk archive panel -----
-    disqualified_results = [r for r in all_results if r.get("analysis", {}).get("has_disqualifier")]
-    not_yet_archived_disq = [r for r in disqualified_results if not r.get("candidate", {}).get("archived")]
-
-    with st.expander(f"⚡ Bulk Archive ({len(not_yet_archived_disq)} disqualified, not yet archived)", expanded=False):
+    # ----- Bulk actions panel -----
+    with st.expander("⚡ Bulk Actions", expanded=False):
         if not lever_perform_as_user_id:
-            st.warning("Set LEVER_PERFORM_AS_USER_ID on Render to enable bulk archive.")
+            st.warning("Set LEVER_PERFORM_AS_USER_ID on Render to enable bulk actions.")
         else:
-            bulk_criterion = st.radio(
-                "Select candidates to archive:",
-                options=["Disqualified candidates", "Candidates with score below threshold"],
-                key="bulk_criterion",
-                horizontal=True,
-            )
+            stages_cache = st.session_state.get("lever_stages_cache") or []
 
-            if bulk_criterion == "Disqualified candidates":
-                targets = not_yet_archived_disq
-                st.caption(f"{len(targets)} candidate{'s' if len(targets) != 1 else ''} marked as disqualified and not yet archived.")
-            else:
-                threshold = st.slider(
-                    "Archive candidates with score strictly less than:",
-                    min_value=0, max_value=100, value=30, step=5,
-                    key="bulk_score_threshold",
+            # --- Move (promote) rule ---
+            st.markdown("**📈 Move high scorers to a stage**")
+            enable_promote = st.checkbox("Enable move rule", key="bulk_enable_promote")
+            promote_threshold = None
+            promote_stage_name = None
+            promote_targets = []
+            if enable_promote:
+                promote_threshold = st.slider(
+                    "Move candidates with score ≥",
+                    min_value=0, max_value=100, value=80, step=5,
+                    key="bulk_promote_threshold",
                 )
-                targets = [
+                promote_stage_options = [s for s in STAGE_FILTER_OPTIONS if s != "archive"]
+                promote_stage_name = st.selectbox(
+                    "Move to stage:",
+                    options=promote_stage_options,
+                    key="bulk_promote_stage",
+                )
+                promote_targets = [
                     r for r in all_results
                     if not r.get("candidate", {}).get("archived")
-                    and r.get("analysis", {}).get("overall_score", 0) < threshold
+                    and r.get("analysis", {}).get("overall_score", 0) >= promote_threshold
+                    and not r.get("analysis", {}).get("has_disqualifier")
                 ]
-                st.caption(f"{len(targets)} candidate{'s' if len(targets) != 1 else ''} with score < {threshold} and not yet archived.")
+                st.caption(f"→ Matches **{len(promote_targets)}** candidate{'s' if len(promote_targets) != 1 else ''}.")
 
-            # Reason picker (lazy-load reasons)
-            if st.session_state.archive_reasons_cache is None:
-                try:
-                    st.session_state.archive_reasons_cache = fetch_archive_reasons()
-                except Exception as fetch_err:
-                    st.error(f"Could not load archive reasons: {fetch_err}")
-                    st.session_state.archive_reasons_cache = []
+            st.markdown("---")
 
-            reasons = st.session_state.archive_reasons_cache or []
-            if not reasons:
-                st.warning("No archive reasons available in this Lever account.")
-            else:
-                reason_labels = [r.get("text", "") for r in reasons]
-                bulk_reason_label = st.selectbox(
-                    "Archive reason for all selected:",
-                    options=reason_labels,
-                    key="bulk_archive_reason",
+            # --- Archive rule ---
+            st.markdown("**📁 Archive low scorers / disqualified candidates**")
+            enable_archive = st.checkbox("Enable archive rule", key="bulk_enable_archive")
+            archive_use_score = False
+            archive_threshold = None
+            archive_use_disqualified = False
+            bulk_reason_id = None
+            bulk_reason_label = ""
+            archive_targets = []
+            if enable_archive:
+                archive_use_score = st.checkbox(
+                    "Archive candidates with score below a threshold",
+                    value=True,
+                    key="bulk_archive_use_score",
                 )
-                bulk_reason_id = next(
-                    (r.get("id") for r in reasons if r.get("text") == bulk_reason_label),
-                    None,
+                if archive_use_score:
+                    archive_threshold = st.slider(
+                        "Archive candidates with score <",
+                        min_value=0, max_value=100, value=50, step=5,
+                        key="bulk_archive_threshold",
+                    )
+                archive_use_disqualified = st.checkbox(
+                    "Also archive all disqualified candidates",
+                    key="bulk_archive_use_disqualified",
                 )
 
-                # Two-step confirmation: first click arms, second click fires
-                arm_key = "bulk_archive_armed"
-                if arm_key not in st.session_state:
-                    st.session_state[arm_key] = False
-
-                if not targets:
-                    st.info("No candidates match the criteria above.")
-                elif not st.session_state[arm_key]:
-                    if st.button(f"Archive {len(targets)} candidate{'s' if len(targets) != 1 else ''}", type="primary", key="bulk_archive_arm"):
-                        st.session_state[arm_key] = True
-                        st.rerun()
+                # Lazy-load archive reasons
+                if st.session_state.archive_reasons_cache is None:
+                    try:
+                        st.session_state.archive_reasons_cache = fetch_archive_reasons()
+                    except Exception as fetch_err:
+                        st.error(f"Could not load archive reasons: {fetch_err}")
+                        st.session_state.archive_reasons_cache = []
+                reasons = st.session_state.archive_reasons_cache or []
+                if not reasons:
+                    st.warning("No archive reasons available in this Lever account.")
                 else:
-                    st.warning(f"About to archive {len(targets)} candidate{'s' if len(targets) != 1 else ''} with reason: **{bulk_reason_label}**. This calls Lever's API for each candidate.")
-                    col_confirm, col_cancel = st.columns(2)
-                    with col_confirm:
-                        confirm = st.button(f"✅ Confirm archive {len(targets)}", type="primary", key="bulk_archive_confirm")
-                    with col_cancel:
-                        cancel = st.button("Cancel", key="bulk_archive_cancel")
+                    reason_labels = [r.get("text", "") for r in reasons]
+                    bulk_reason_label = st.selectbox(
+                        "Archive reason for all archived candidates:",
+                        options=reason_labels,
+                        key="bulk_archive_reason",
+                    )
+                    bulk_reason_id = next(
+                        (r.get("id") for r in reasons if r.get("text") == bulk_reason_label),
+                        None,
+                    )
 
-                    if cancel:
+                # Compute archive targets (union of the two sub-criteria, deduped)
+                seen_ids = set()
+                for r in all_results:
+                    if r.get("candidate", {}).get("archived"):
+                        continue
+                    cid = r.get("candidate", {}).get("id", "")
+                    if cid in seen_ids:
+                        continue
+                    score = r.get("analysis", {}).get("overall_score", 0)
+                    is_disq = bool(r.get("analysis", {}).get("has_disqualifier"))
+                    matches = (
+                        (archive_use_score and archive_threshold is not None and score < archive_threshold)
+                        or (archive_use_disqualified and is_disq)
+                    )
+                    if matches:
+                        archive_targets.append(r)
+                        seen_ids.add(cid)
+                st.caption(f"→ Matches **{len(archive_targets)}** candidate{'s' if len(archive_targets) != 1 else ''}.")
+
+            # Overlap warning
+            if (
+                enable_promote and enable_archive and archive_use_score
+                and archive_threshold is not None and promote_threshold is not None
+                and archive_threshold > promote_threshold
+            ):
+                st.warning(
+                    f"⚠️ Archive threshold ({archive_threshold}) is higher than promote threshold "
+                    f"({promote_threshold}). Candidates in the overlap will be moved AND then archived. "
+                    "Consider adjusting so archive < promote."
+                )
+
+            st.markdown("---")
+
+            # --- Apply (two-step) ---
+            has_promote_work = enable_promote and promote_targets and promote_stage_name
+            has_archive_work = enable_archive and archive_targets and bulk_reason_id
+            can_apply = bool(has_promote_work or has_archive_work)
+
+            arm_key = "bulk_actions_armed"
+            if arm_key not in st.session_state:
+                st.session_state[arm_key] = False
+
+            if not can_apply:
+                st.info("Enable at least one rule with matching candidates and a valid target to proceed.")
+            elif not st.session_state[arm_key]:
+                if st.button("Apply Bulk Changes", type="primary", key="bulk_actions_arm"):
+                    st.session_state[arm_key] = True
+                    st.rerun()
+            else:
+                # Confirmation summary
+                action_lines = []
+                if has_promote_work:
+                    action_lines.append(
+                        f"Move **{len(promote_targets)}** candidate{'s' if len(promote_targets) != 1 else ''} "
+                        f"with score ≥ {promote_threshold} → **{promote_stage_name}**"
+                    )
+                if has_archive_work:
+                    archive_desc_parts = []
+                    if archive_use_score:
+                        archive_desc_parts.append(f"score < {archive_threshold}")
+                    if archive_use_disqualified:
+                        archive_desc_parts.append("disqualified")
+                    archive_desc = " or ".join(archive_desc_parts)
+                    action_lines.append(
+                        f"Archive **{len(archive_targets)}** candidate{'s' if len(archive_targets) != 1 else ''} "
+                        f"({archive_desc}) with reason **{bulk_reason_label}**"
+                    )
+                st.warning("About to:\n- " + "\n- ".join(action_lines))
+
+                col_confirm, col_cancel = st.columns(2)
+                with col_confirm:
+                    confirm = st.button("✅ Confirm", type="primary", key="bulk_actions_confirm")
+                with col_cancel:
+                    cancel = st.button("Cancel", key="bulk_actions_cancel")
+
+                if cancel:
+                    st.session_state[arm_key] = False
+                    st.rerun()
+
+                if confirm:
+                    # Build the operation list — promotes first
+                    operations = []  # (kind, result_dict, payload)
+                    promote_stage_id = None
+                    if has_promote_work:
+                        promote_stage_id = next(
+                            (s.get("id") for s in stages_cache
+                             if s.get("text", "").strip().lower() == promote_stage_name.strip().lower()),
+                            None,
+                        )
+                        if not promote_stage_id:
+                            st.error(f"Could not find a Lever stage matching '{promote_stage_name}'. Skipping promote operations.")
+                        else:
+                            for r in promote_targets:
+                                operations.append(("move", r, promote_stage_id))
+                    if has_archive_work:
+                        for r in archive_targets:
+                            operations.append(("archive", r, bulk_reason_id))
+
+                    if not operations:
+                        st.error("Nothing to do after validation.")
                         st.session_state[arm_key] = False
-                        st.rerun()
-
-                    if confirm and bulk_reason_id:
+                    else:
                         progress = st.progress(0)
                         status = st.empty()
                         succeeded = 0
                         failed = []
-                        for i, r in enumerate(targets):
+                        total = len(operations)
+                        for i, (kind, r, payload) in enumerate(operations):
                             cid = r.get("candidate", {}).get("id", "")
                             cname = get_candidate_name(r.get("candidate", {}))
-                            status.text(f"Archiving {i + 1}/{len(targets)}: {cname}")
                             try:
-                                archive_candidate(cid, bulk_reason_id, lever_perform_as_user_id)
-                                # Update local state so UI reflects archive without re-fetching
-                                r["candidate"]["archived"] = {"reason": bulk_reason_id}
-                                st.session_state.recent_stage_changes[cid] = f"Archived: {bulk_reason_label}"
+                                if kind == "move":
+                                    status.text(f"Moving {i + 1}/{total}: {cname} → {promote_stage_name}")
+                                    change_candidate_stage(cid, payload, lever_perform_as_user_id)
+                                    r["candidate"]["stage"] = payload
+                                    r["candidate"]["archived"] = None
+                                    st.session_state.recent_stage_changes[cid] = f"Moved to {promote_stage_name}"
+                                else:  # archive
+                                    status.text(f"Archiving {i + 1}/{total}: {cname}")
+                                    archive_candidate(cid, payload, lever_perform_as_user_id)
+                                    r["candidate"]["archived"] = {"reason": payload}
+                                    st.session_state.recent_stage_changes[cid] = f"Archived: {bulk_reason_label}"
                                 succeeded += 1
                             except Exception as bulk_err:
-                                failed.append((cname, str(bulk_err)))
-                            progress.progress((i + 1) / len(targets))
+                                failed.append((cname, kind, str(bulk_err)))
+                            progress.progress((i + 1) / total)
 
                         progress.empty()
                         status.empty()
                         st.session_state[arm_key] = False
 
                         if failed:
-                            st.error(f"Archived {succeeded}/{len(targets)}. {len(failed)} failed:")
-                            for fname, ferr in failed[:10]:
-                                st.caption(f"• {fname}: {ferr}")
+                            st.error(f"Completed {succeeded}/{total}. {len(failed)} failed:")
+                            for fname, fkind, ferr in failed[:10]:
+                                st.caption(f"• {fname} ({fkind}): {ferr}")
                             if len(failed) > 10:
                                 st.caption(f"...and {len(failed) - 10} more.")
                         else:
-                            st.success(f"✅ Archived all {succeeded} candidate{'s' if succeeded != 1 else ''}.")
+                            st.success(f"✅ Completed all {succeeded} operation{'s' if succeeded != 1 else ''}.")
 
     if not results:
         st.warning(f"No candidates found with score ≥ {st.session_state.minimum_score}. Try adjusting the minimum score filter.")
