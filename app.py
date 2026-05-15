@@ -105,6 +105,32 @@ def clear_session_cache() -> None:
         print(f"Failed to clear session cache: {e}")
 
 
+def find_lever_stage_match(user_label: str, stages: list) -> dict | None:
+    """Resolve a user-facing stage label (e.g. "pass resume screen") to a real
+    Lever stage object. Tries exact case-insensitive match first, then falls
+    back to substring matching in either direction so small naming
+    differences in Lever (capitalization, suffixes, separators) still work.
+    """
+    if not user_label or not stages:
+        return None
+    label_lower = user_label.strip().lower()
+
+    # 1) Exact case-insensitive match
+    for s in stages:
+        if (s.get("text") or "").strip().lower() == label_lower:
+            return s
+    # 2) Stage name contains the user label (e.g. "Pass Resume Screen - Pending" contains "pass resume screen")
+    for s in stages:
+        if label_lower and label_lower in (s.get("text") or "").strip().lower():
+            return s
+    # 3) User label contains the stage name (e.g. "pass resume screen" contains "Resume Screen")
+    for s in stages:
+        stage_lower = (s.get("text") or "").strip().lower()
+        if stage_lower and stage_lower in label_lower:
+            return s
+    return None
+
+
 # ----- Resume rendering with highlighted entities -----
 import html as _html
 
@@ -664,13 +690,14 @@ if st.session_state.analysis_results:
                     operations = []  # (kind, result_dict, payload)
                     promote_stage_id = None
                     if has_promote_work:
-                        promote_stage_id = next(
-                            (s.get("id") for s in stages_cache
-                             if s.get("text", "").strip().lower() == promote_stage_name.strip().lower()),
-                            None,
-                        )
+                        matched_stage = find_lever_stage_match(promote_stage_name, stages_cache)
+                        promote_stage_id = matched_stage.get("id") if matched_stage else None
                         if not promote_stage_id:
-                            st.error(f"Could not find a Lever stage matching '{promote_stage_name}'. Skipping promote operations.")
+                            available = ", ".join(s.get("text", "") for s in stages_cache if s.get("text"))
+                            st.error(
+                                f"Could not find a Lever stage matching '{promote_stage_name}'. "
+                                f"Skipping promote operations.\n\nAvailable Lever stages: {available}"
+                            )
                         else:
                             for r in promote_targets:
                                 operations.append(("move", r, promote_stage_id))
@@ -888,15 +915,15 @@ if st.session_state.analysis_results:
                                     candidate["archived"] = {"reason": selected_reason_id}
                                     st.session_state.recent_stage_changes[opportunity_id] = f"Archived: {selected_reason_label}"
                                 else:
-                                    # Resolve UI stage name -> Lever stage ID (case-insensitive match)
-                                    target_lower = selected_target.strip().lower()
-                                    target_stage_id = next(
-                                        (s.get("id") for s in stages_cache
-                                         if s.get("text", "").strip().lower() == target_lower),
-                                        None,
-                                    )
+                                    # Resolve UI stage name -> Lever stage ID with fallback matching
+                                    matched_stage = find_lever_stage_match(selected_target, stages_cache)
+                                    target_stage_id = matched_stage.get("id") if matched_stage else None
                                     if not target_stage_id:
-                                        st.error(f"Could not find a Lever stage matching '{selected_target}'.")
+                                        available = ", ".join(s.get("text", "") for s in stages_cache if s.get("text"))
+                                        st.error(
+                                            f"Could not find a Lever stage matching '{selected_target}'.\n\n"
+                                            f"Available Lever stages: {available}"
+                                        )
                                     else:
                                         change_candidate_stage(opportunity_id, target_stage_id, lever_perform_as_user_id)
                                         candidate["stage"] = target_stage_id
