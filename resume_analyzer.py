@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
@@ -96,6 +97,9 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
         technical_context += "3. Senior leaders may have less direct coding but should show technical depth\n"
         technical_context += "4. Use job requirements to determine what 'hands-on' means for this specific role\n"
 
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_context = f"\n\nTODAY'S DATE: {today}\nUse this date as the reference point for any \"in the past N years\" calculations.\n"
+
     # Build disqualifier instructions
     disqualifier_section = ""
     active_disqualifiers = [d.strip() for d in (disqualifiers or []) if d and d.strip()]
@@ -104,51 +108,64 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
         for d in active_disqualifiers:
             disqualifier_section += f"- \"{d}\"\n"
         disqualifier_section += (
-            "\nDisqualifier matching rules:\n"
-            "- Read each disqualifier LITERALLY. Check whether the resume shows clear evidence of the stated condition being true.\n"
-            "- For TIME-BASED conditions (e.g. \"worked in X within the past N years\"), use the most recent year on the resume as \"today\" "
-            "and check whether the relevant role/experience falls within that window. Overlap with the window counts as matching.\n"
-            "- For LOCATION conditions (e.g. \"worked for a role based in [country]\"), check the resume's stated location for each role. "
-            "City names in that country count as matches (e.g. Pune, Bangalore, Mumbai = India; London = UK).\n"
-            "- For CREDENTIAL conditions (e.g. \"does not have a bachelor's degree\"), check the education section.\n"
-            "- If the resume shows clear evidence of ANY disqualifier being true, set \"has_disqualifier\": true and "
-            "\"disqualifier_reason\": <the exact disqualifier text that matched, plus a short phrase quoting the resume evidence>.\n"
-            "- Otherwise set \"has_disqualifier\": false and omit disqualifier_reason.\n"
-            "- DO NOT require 100% certainty; clear inference from the resume is enough. If a candidate's resume shows a role in Pune from 2019-2023 "
-            "and the disqualifier is about India work in the past 6 years, that IS a match.\n"
+            "\nDisqualifier matching rules — be ACTIVELY LOOKING for evidence that any disqualifier is true:\n"
+            "- Treat each disqualifier as a YES/NO question about the candidate's history. If the answer is plausibly YES based on the resume, FLAG IT.\n"
+            "- For TIME-BASED conditions (e.g. \"has held a role in X in the past N years\"), the window is the past N years from TODAY'S DATE (above). "
+            "Any role whose start or end date overlaps that window counts as YES.\n"
+            "- For LOCATION conditions (e.g. \"role based in India\"), check the resume's stated city/country for each role. "
+            "City names imply their country — a role with location \"Pune, India\" or just \"Bangalore\" or \"Mumbai\" or \"Hyderabad\" or \"Chennai\" or \"Delhi\" "
+            "IS a role based in India. \"London\" implies UK, \"Toronto\" implies Canada, etc.\n"
+            "- WORKED EXAMPLE: Resume shows \"TCS — Python Developer, Pune, India, June 2019 – Feb 2023\". "
+            f"Today is {today}. The disqualifier is \"has held a role based in India in the past 6 years.\" "
+            "6 years ago is roughly mid-2020. The TCS role ran 2019–Feb 2023, overlapping that window. "
+            "Answer: YES, FLAG IT — set has_disqualifier=true, disqualifier_reason=\"has held a role based in India in the past 6 years (TCS, Pune, June 2019 – Feb 2023).\"\n"
+            "- For CREDENTIAL conditions, check the education section.\n"
+            "- If flagged, set \"has_disqualifier\": true and \"disqualifier_reason\": <exact disqualifier text> + (<short evidence from resume>). "
+            "Otherwise set \"has_disqualifier\": false.\n"
+            "- DO NOT require certainty. Reasonable inference from the resume is enough.\n"
         )
 
     # Build detailed requirements scoring instructions
     requirements_scoring = ""
     if weighted_requirements:
         requirements_scoring = "\n\nREQUIREMENT SCORING INSTRUCTIONS:\n"
-        requirements_scoring += "For EACH requirement, use BINARY scoring - determine if the candidate HAS the requirement or DOES NOT have it:\n\n"
+        requirements_scoring += "For EACH requirement, use BINARY scoring — full weight or zero, no middle ground:\n\n"
         for r in weighted_requirements:
             req_text = r['requirement']
             req_weight = r['weight']
             requirements_scoring += f"- \"{req_text}\":\n"
-            requirements_scoring += f"  * HAS the requirement: {req_weight} points (full credit)\n"
-            requirements_scoring += f"  * DOES NOT have the requirement: 0 points (no credit)\n\n"
-        requirements_scoring += "CRITICAL SCORING RULES — read carefully, the previous version of these rules was being interpreted too loosely:\n"
-        requirements_scoring += "- LITERAL MATCH ONLY. The resume must EXPLICITLY show the requirement, not a similar or related qualification.\n"
-        requirements_scoring += "  * If a requirement lists specific job titles (e.g. \"Forward Deployed Engineer, Implementation Engineer, or Solutions Engineer\"), "
-        requirements_scoring += "ONLY those exact titles count. Titles like \"AI/ML Engineer\", \"Software Engineer\", \"Data Scientist\" are NOT matches — score 0.\n"
-        requirements_scoring += "  * If a requirement specifies a credential (e.g. \"PhD in Computer Science\"), only that exact credential counts. A Master's degree is NOT a PhD — score 0.\n"
-        requirements_scoring += "  * If a requirement specifies a quantity (e.g. \"5+ years of Python\"), the resume must show at least that much cumulative experience. "
-        requirements_scoring += "3 years of Python is NOT \"5+ years\" — score 0.\n"
-        requirements_scoring += "  * If a requirement specifies a technology or skill (e.g. \"experience with Kubernetes\"), the resume must literally mention it.\n"
-        requirements_scoring += "- NO partial credit. Award either the full weight or zero — never something in between.\n"
-        requirements_scoring += "- DEFAULT TO ZERO when in doubt. If you are not 100% certain the candidate meets the requirement based on explicit resume text, score 0.\n"
-        requirements_scoring += "- DO NOT INFER. Do not award credit because the candidate \"probably\" or \"likely\" has the skill based on adjacent work. "
-        requirements_scoring += "Score 0 unless the resume explicitly states it.\n"
-        requirements_scoring += "- DO NOT GENERALIZE. \"Worked on AI products\" does not mean the candidate has the title AI Engineer. "
-        requirements_scoring += "\"Used Python\" does not satisfy \"5+ years of Python expertise\". Match the LITERAL text, not the spirit.\n"
-        requirements_scoring += "- For each requirement that you award full points, you must be able to quote a specific phrase from the resume that LITERALLY matches.\n"
+            requirements_scoring += f"  * HAS the requirement: {req_weight} points\n"
+            requirements_scoring += f"  * DOES NOT have it: 0 points\n\n"
+        requirements_scoring += "HOW TO EVALUATE — there are TWO categories of requirements, treat them differently:\n\n"
+        requirements_scoring += "CATEGORY A — LITERAL MATCH REQUIRED. Use this for:\n"
+        requirements_scoring += "  - Job titles (e.g. \"held a title of Forward Deployed Engineer, Implementation Engineer, or Solutions Engineer\")\n"
+        requirements_scoring += "  - Credentials and degrees (e.g. \"Master's in CS\", \"PMP certification\")\n"
+        requirements_scoring += "  - Specific named technologies (e.g. \"Kubernetes\", \"Snowflake\")\n"
+        requirements_scoring += "  - Quantitative thresholds (e.g. \"5+ years of Python\")\n"
+        requirements_scoring += "  For Category A: the resume must EXPLICITLY contain the requirement text or a close paraphrase of the SAME concept.\n"
+        requirements_scoring += "  Example: requirement \"Forward Deployed Engineer\" + resume title \"AI/ML Engineer\" = 0 points. Different titles, no credit.\n"
+        requirements_scoring += "  Example: requirement \"PhD\" + resume shows \"Master's\" = 0 points. Different credential.\n"
+        requirements_scoring += "  Example: requirement \"5+ years Python\" + resume shows 3 years = 0 points. Doesn't meet threshold.\n\n"
+        requirements_scoring += "CATEGORY B — INFERENCE FROM CONTEXT IS ALLOWED. Use this for:\n"
+        requirements_scoring += "  - Industry / company type (e.g. \"experience at a B2B SaaS company\", \"fintech background\", \"healthcare experience\")\n"
+        requirements_scoring += "  - Domain or sector exposure (e.g. \"worked on enterprise products\", \"consumer-facing\")\n"
+        requirements_scoring += "  - General functional experience implied by role (e.g. \"led teams\", \"customer-facing role\")\n"
+        requirements_scoring += "  For Category B: USE the COMPANY RESEARCH context above AND your general knowledge of well-known companies. "
+        requirements_scoring += "If the candidate worked at a company you know fits the description, award full credit.\n"
+        requirements_scoring += "  Example: requirement \"experience at a B2B SaaS company\" + resume shows Scale AI = full credit. Scale AI is a known B2B SaaS company.\n"
+        requirements_scoring += "  Example: requirement \"fintech experience\" + resume shows Stripe = full credit.\n"
+        requirements_scoring += "  Example: requirement \"big tech experience\" + resume shows Google = full credit.\n\n"
+        requirements_scoring += "GENERAL RULES:\n"
+        requirements_scoring += "- NO partial credit ever. Either full weight or zero.\n"
+        requirements_scoring += "- For Category A: if you are not certain the literal claim is met, award 0.\n"
+        requirements_scoring += "- For Category B: if a company in the resume plausibly matches the description, award full credit.\n"
+        requirements_scoring += "- For each full-credit award, you must be able to point to a specific phrase in the resume (or a specific company from the resume) that justifies it.\n"
 
     # Build the prompt
     if technical_indicators:
         prompt = f"""Analyze this resume and score STRICTLY based on evidence.
 
+{today_context}
 COMPANY RESEARCH: {company_insight}
 
 {technical_context}
@@ -173,6 +190,7 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
     else:
         prompt = f"""Analyze this resume and score STRICTLY based on evidence.
 
+{today_context}
 COMPANY RESEARCH: {company_insight}
 
 {jd_str}WEIGHTED REQUIREMENTS:
