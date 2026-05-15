@@ -105,6 +105,43 @@ def clear_session_cache() -> None:
         print(f"Failed to clear session cache: {e}")
 
 
+# ----- Resume rendering with highlighted entities -----
+import html as _html
+
+def render_resume_with_highlights(resume_text: str, employment_history: list) -> str:
+    """Return an HTML <pre> block with companies/titles/dates wrapped in <strong>.
+
+    The LLM is asked to return the entity strings verbatim from the resume; we
+    HTML-escape the resume first, then string-replace each entity with its
+    bolded form. Longest entities are replaced first so a long company name
+    doesn't get partially clobbered by a shorter substring match.
+    """
+    if not resume_text:
+        return ""
+
+    safe_text = _html.escape(resume_text)
+
+    entities = set()
+    for emp in (employment_history or []):
+        if not isinstance(emp, dict):
+            continue
+        for key in ("company", "title", "dates"):
+            val = emp.get(key, "")
+            if isinstance(val, str) and len(val.strip()) >= 3:
+                entities.add(val.strip())
+
+    for ent in sorted(entities, key=len, reverse=True):
+        escaped_ent = _html.escape(ent)
+        if escaped_ent in safe_text:
+            safe_text = safe_text.replace(escaped_ent, f"<strong>{escaped_ent}</strong>")
+
+    return (
+        "<pre style='white-space: pre-wrap; word-wrap: break-word; "
+        "font-family: inherit; margin: 0; font-size: 0.9rem;'>"
+        f"{safe_text}</pre>"
+    )
+
+
 st.set_page_config(
     page_title="Lever Analyzer",
     page_icon="📊",
@@ -715,9 +752,13 @@ if st.session_state.analysis_results:
                 with col1:
                     st.markdown("**Resume:**")
                     resume_text = result.get("resume_text", "")
+                    employment_history = analysis.get("employment_history", [])
                     with st.container(height=600, border=True):
                         if resume_text:
-                            st.text(resume_text)
+                            st.markdown(
+                                render_resume_with_highlights(resume_text, employment_history),
+                                unsafe_allow_html=True,
+                            )
                         else:
                             st.caption("No resume text available for this candidate.")
 

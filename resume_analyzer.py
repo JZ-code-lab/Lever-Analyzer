@@ -166,6 +166,7 @@ Return JSON with:
 - strengths: List of candidate's strengths
 - weaknesses: List of candidate's weaknesses
 - summary: Brief overall assessment
+- employment_history: Array of {"company": "<exact company name as it appears in the resume>", "title": "<exact job title as it appears>", "dates": "<exact dates string as it appears, e.g. 'Mar 2024 - Present' or '2019-2023'"} objects, one per role. Copy the strings VERBATIM from the resume so they can be located and highlighted in the original text.
 - technical_indicators_analysis: Brief assessment of hands-on technical capabilities based on indicators provided
 
 IMPORTANT: Your requirement_scores must add up to the overall_score. Score strictly based on actual evidence in the resume."""
@@ -187,6 +188,7 @@ Return JSON with:
 - strengths: List of candidate's strengths
 - weaknesses: List of candidate's weaknesses
 - summary: Brief overall assessment
+- employment_history: Array of {"company": "<exact company name as it appears in the resume>", "title": "<exact job title as it appears>", "dates": "<exact dates string as it appears, e.g. 'Mar 2024 - Present' or '2019-2023'"} objects, one per role. Copy the strings VERBATIM from the resume so they can be located and highlighted in the original text.
 
 IMPORTANT: Your requirement_scores must add up to the overall_score. Score strictly based on actual evidence in the resume."""
 
