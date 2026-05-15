@@ -202,12 +202,57 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
     
     try:
         result = json.loads(call_openai())
-        # Recompute overall_score from requirement_scores — the LLM's own sum
-        # is unreliable (it frequently returns 100 even when the parts sum lower).
-        req_scores = result.get("requirement_scores") or {}
-        if isinstance(req_scores, dict) and req_scores:
+        raw_scores = result.get("requirement_scores") or {}
+
+        # Server-side enforcement: snap every per-requirement score to BINARY.
+        # Anything less than the requirement's full weight becomes 0. This is
+        # the "all-or-nothing" rule the prompt asks for, hardened against
+        # cases where the LLM still hedges with a partial number.
+        if isinstance(raw_scores, dict) and weighted_requirements:
+            cleaned_scores = {}
             total = 0.0
-            for v in req_scores.values():
+            for r in weighted_requirements:
+                req_text = r.get("requirement", "")
+                try:
+                    weight = float(r.get("weight", 0) or 0)
+                except (TypeError, ValueError):
+                    weight = 0.0
+                if not req_text:
+                    continue
+
+                # Look up the LLM's score for this requirement (exact key,
+                # then case-insensitive, then substring of the first 30 chars).
+                raw_value = raw_scores.get(req_text)
+                if raw_value is None:
+                    req_lc = req_text.strip().lower()
+                    for k, v in raw_scores.items():
+                        if isinstance(k, str) and k.strip().lower() == req_lc:
+                            raw_value = v
+                            break
+                if raw_value is None:
+                    prefix = req_text.strip()[:30].lower()
+                    if prefix:
+                        for k, v in raw_scores.items():
+                            if isinstance(k, str) and prefix in k.strip().lower():
+                                raw_value = v
+                                break
+
+                try:
+                    score_val = float(raw_value) if raw_value is not None else 0.0
+                except (TypeError, ValueError):
+                    score_val = 0.0
+
+                # Snap: full weight only if LLM returned at least the full weight.
+                snapped = weight if score_val >= weight else 0.0
+                cleaned_scores[req_text] = snapped
+                total += snapped
+
+            result["requirement_scores"] = cleaned_scores
+            result["overall_score"] = total
+        elif isinstance(raw_scores, dict) and raw_scores:
+            # No requirements list to validate against — fall back to summing.
+            total = 0.0
+            for v in raw_scores.values():
                 try:
                     total += float(v)
                 except (TypeError, ValueError):
