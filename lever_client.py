@@ -132,28 +132,34 @@ def fetch_archive_reasons() -> list[dict]:
 
 def change_candidate_stage(opportunity_id: str, stage_id: str, perform_as: str) -> dict:
     """Move an opportunity to a new stage. Returns the updated opportunity."""
-    response = requests.post(
+    response = requests.put(
         f"{LEVER_API_BASE}/opportunities/{opportunity_id}/stage",
         headers=get_auth_header(),
         params={"perform_as": perform_as},
         json={"stage": stage_id},
     )
-    if response.status_code not in (200, 201):
+    if response.status_code not in (200, 201, 204):
         raise Exception(f"Failed to change stage (HTTP {response.status_code}): {response.text}")
-    return response.json().get("data", {})
+    try:
+        return response.json().get("data", {})
+    except ValueError:
+        return {}
 
 
 def archive_candidate(opportunity_id: str, reason_id: str, perform_as: str) -> dict:
     """Archive an opportunity with the given reason. Returns the updated opportunity."""
-    response = requests.post(
+    response = requests.put(
         f"{LEVER_API_BASE}/opportunities/{opportunity_id}/archived",
         headers=get_auth_header(),
         params={"perform_as": perform_as},
         json={"reason": reason_id},
     )
-    if response.status_code not in (200, 201):
+    if response.status_code not in (200, 201, 204):
         raise Exception(f"Failed to archive candidate (HTTP {response.status_code}): {response.text}")
-    return response.json().get("data", {})
+    try:
+        return response.json().get("data", {})
+    except ValueError:
+        return {}
 
 
 def _fetch_candidates_with_status(posting_id: str, archived: bool) -> list[dict]:
