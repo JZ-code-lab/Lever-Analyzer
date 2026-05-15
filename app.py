@@ -40,6 +40,71 @@ def default_stage_filters() -> dict:
 def default_disqualifiers() -> list:
     return [{"text": ""}, {"text": ""}]
 
+
+# ----- Session persistence -----
+# Streamlit drops session_state when the browser tab is idle long enough to
+# break the WebSocket. We write a snapshot to /tmp so a reconnect can pick
+# up where the user left off. /tmp survives idle/reconnect on Render's
+# Docker runtime but is wiped on container restart (i.e. on each deploy).
+import json
+import time
+
+SESSION_CACHE_PATH = "/tmp/lever_analyzer_session.json"
+SESSION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60  # one week
+
+PERSISTED_KEYS = [
+    "analysis_results",
+    "selected_postings",
+    "postings",
+    "current_step",
+    "minimum_score",
+    "requirements",
+    "disqualifiers",
+    "job_description",
+    "jd_weight",
+    "stage_filters",
+    "country_filters",
+    "location_filters",
+    "require_hands_on_coding",
+    "recent_stage_changes",
+]
+
+
+def save_session_state() -> None:
+    """Snapshot the analysis-relevant slice of session state to disk."""
+    try:
+        snapshot = {k: st.session_state.get(k) for k in PERSISTED_KEYS}
+        snapshot["_saved_at"] = time.time()
+        with open(SESSION_CACHE_PATH, "w") as f:
+            json.dump(snapshot, f)
+    except Exception as e:
+        print(f"Failed to save session cache: {e}")
+
+
+def load_session_state() -> dict | None:
+    """Return a previously saved snapshot if it exists and is fresh."""
+    try:
+        if not os.path.exists(SESSION_CACHE_PATH):
+            return None
+        with open(SESSION_CACHE_PATH, "r") as f:
+            snapshot = json.load(f)
+        if time.time() - snapshot.get("_saved_at", 0) > SESSION_CACHE_TTL_SECONDS:
+            return None
+        return snapshot
+    except Exception as e:
+        print(f"Failed to load session cache: {e}")
+        return None
+
+
+def clear_session_cache() -> None:
+    """Remove the on-disk snapshot — used when the user explicitly starts over."""
+    try:
+        if os.path.exists(SESSION_CACHE_PATH):
+            os.remove(SESSION_CACHE_PATH)
+    except Exception as e:
+        print(f"Failed to clear session cache: {e}")
+
+
 st.set_page_config(
     page_title="Lever Analyzer",
     page_icon="📊",
@@ -91,6 +156,18 @@ if "recent_stage_changes" not in st.session_state:
     st.session_state.recent_stage_changes = {}
 if "require_hands_on_coding" not in st.session_state:
     st.session_state.require_hands_on_coding = False
+
+# Auto-restore on fresh sessions (e.g. after a WebSocket disconnect from idle).
+# Only runs once per session; deliberate "Start New Search" actions clear the cache.
+if "session_restored" not in st.session_state:
+    st.session_state.session_restored = True
+    if st.session_state.analysis_results is None:
+        snapshot = load_session_state()
+        if snapshot and snapshot.get("analysis_results"):
+            for key in PERSISTED_KEYS:
+                value = snapshot.get(key)
+                if value is not None:
+                    st.session_state[key] = value
 
 lever_api_key = os.environ.get("LEVER_API_KEY", "")
 openai_api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -194,6 +271,8 @@ with st.sidebar:
         st.session_state.stage_filters = default_stage_filters()
         st.session_state.disqualifiers = default_disqualifiers()
         st.session_state.require_hands_on_coding = False
+        st.session_state.recent_stage_changes = {}
+        clear_session_cache()
         st.rerun()
 
     st.markdown("---")
@@ -330,6 +409,8 @@ if st.session_state.analysis_results:
             st.session_state.stage_filters = default_stage_filters()
             st.session_state.disqualifiers = default_disqualifiers()
             st.session_state.require_hands_on_coding = False
+            st.session_state.recent_stage_changes = {}
+            clear_session_cache()
             st.rerun()
 
     st.header("📈 Candidate Rankings")
@@ -589,6 +670,7 @@ if st.session_state.analysis_results:
                         progress.empty()
                         status.empty()
                         st.session_state[arm_key] = False
+                        save_session_state()
 
                         if failed:
                             st.error(f"Completed {succeeded}/{total}. {len(failed)} failed:")
@@ -777,6 +859,7 @@ if st.session_state.analysis_results:
                                         candidate["stage"] = target_stage_id
                                         candidate["archived"] = None
                                         st.session_state.recent_stage_changes[opportunity_id] = f"Moved to {selected_target}"
+                                save_session_state()
                                 st.rerun()
                             except Exception as apply_err:
                                 st.error(f"Update failed: {apply_err}")
@@ -1222,6 +1305,7 @@ elif st.session_state.current_step == 2:
                                     st.success(f"✅ All {candidates_after_filter} candidate{'s' if candidates_after_filter != 1 else ''} have strong hands-on coding indicators.")
 
                             st.session_state.analysis_results = results
+                            save_session_state()
                             analysis_progress.empty()
                             analysis_status.empty()
                             st.rerun()
