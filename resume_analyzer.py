@@ -30,21 +30,30 @@ def get_company_research(company_name: str) -> str:
         return ""
 
 def analyze_single_resume(resume_text: str, job_description: Optional[str], weighted_requirements: list[dict], jd_weight: float, technical_indicators: Optional[dict] = None, disqualifiers: Optional[list[str]] = None) -> dict:
-    # --- 1. Extract Top 4 Companies ---
+    # --- 1. Extract every unique employer in the resume ---
     try:
         name_extract = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": f"List the 4 most recent unique employers from this resume. Return ONLY company names separated by a comma.\n\n{resume_text[:2500]}"}]
+            model="gpt-4o",
+            messages=[{
+                "role": "user",
+                "content": (
+                    "List EVERY unique employer mentioned in this resume, in reverse-chronological "
+                    "order (most recent first). Return ONLY the company names, separated by commas, "
+                    "no other text.\n\n"
+                    f"{resume_text}"
+                ),
+            }],
+            temperature=0,
         )
-        companies = [c.strip() for c in name_extract.choices[0].message.content.split(",")]
+        companies = [c.strip() for c in (name_extract.choices[0].message.content or "").split(",") if c.strip()]
 
-        # --- 2. Research Them ---
+        # --- 2. Research them all (cap at 15 as a safety valve for unusual resumes) ---
         research_data = []
-        for co in companies[:4]:  # Safety limit to 4
+        for co in companies[:15]:
             info = get_company_research(co)
             if info:
                 research_data.append(f"{co}: {info}")
-        company_insight = "\n".join(research_data)
+        company_insight = "\n".join(research_data) if research_data else "No research available."
     except:
         company_insight = "No research available."
 
