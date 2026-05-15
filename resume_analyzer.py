@@ -245,11 +245,16 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception(is_rate_limit_error))
     def call_openai():
+        # o4-mini is a reasoning model — it internally thinks step-by-step
+        # before responding, which handles nuanced rules (anti-gaming title
+        # checks, literal-vs-inferred categories, disqualifier evaluation)
+        # better than gpt-4o. Note: reasoning models don't accept the
+        # `temperature` parameter and instead use a fixed sampling strategy.
         response = openai_client.chat.completions.create(
-            model="gpt-4o",
+            model="o4-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            temperature=0,
+            reasoning_effort="medium",
         )
         return response.choices[0].message.content or "{}"
     
