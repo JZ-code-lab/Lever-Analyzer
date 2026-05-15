@@ -844,7 +844,6 @@ if st.session_state.analysis_results:
                     selected_target = st.selectbox(
                         "Move to",
                         options=["(no change)"] + stage_move_options,
-                        index=0,
                         key=f"stage_target_{opportunity_id}",
                         label_visibility="collapsed",
                     )
