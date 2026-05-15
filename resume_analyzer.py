@@ -104,10 +104,18 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
         for d in active_disqualifiers:
             disqualifier_section += f"- \"{d}\"\n"
         disqualifier_section += (
-            "\nIf the resume shows clear evidence of ANY disqualifier above, set "
-            "\"has_disqualifier\": true and \"disqualifier_reason\": <the matching disqualifier text>. "
-            "Otherwise set \"has_disqualifier\": false and omit disqualifier_reason. "
-            "Only flag a disqualifier when the evidence is clear; if unclear, do not flag.\n"
+            "\nDisqualifier matching rules:\n"
+            "- Read each disqualifier LITERALLY. Check whether the resume shows clear evidence of the stated condition being true.\n"
+            "- For TIME-BASED conditions (e.g. \"worked in X within the past N years\"), use the most recent year on the resume as \"today\" "
+            "and check whether the relevant role/experience falls within that window. Overlap with the window counts as matching.\n"
+            "- For LOCATION conditions (e.g. \"worked for a role based in [country]\"), check the resume's stated location for each role. "
+            "City names in that country count as matches (e.g. Pune, Bangalore, Mumbai = India; London = UK).\n"
+            "- For CREDENTIAL conditions (e.g. \"does not have a bachelor's degree\"), check the education section.\n"
+            "- If the resume shows clear evidence of ANY disqualifier being true, set \"has_disqualifier\": true and "
+            "\"disqualifier_reason\": <the exact disqualifier text that matched, plus a short phrase quoting the resume evidence>.\n"
+            "- Otherwise set \"has_disqualifier\": false and omit disqualifier_reason.\n"
+            "- DO NOT require 100% certainty; clear inference from the resume is enough. If a candidate's resume shows a role in Pune from 2019-2023 "
+            "and the disqualifier is about India work in the past 6 years, that IS a match.\n"
         )
 
     # Build detailed requirements scoring instructions
@@ -121,12 +129,21 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
             requirements_scoring += f"- \"{req_text}\":\n"
             requirements_scoring += f"  * HAS the requirement: {req_weight} points (full credit)\n"
             requirements_scoring += f"  * DOES NOT have the requirement: 0 points (no credit)\n\n"
-        requirements_scoring += "CRITICAL SCORING RULES:\n"
-        requirements_scoring += "- This is an absolute assessment - either the candidate has the qualification or they don't\n"
-        requirements_scoring += "- NO partial credit - award either the full weight or zero points for each requirement\n"
-        requirements_scoring += "- Base your decision on clear evidence in the resume\n"
-        requirements_scoring += "- If evidence is ambiguous or unclear, default to NOT having the requirement (0 points)\n"
-        requirements_scoring += "- Only award full points when you can confidently say the candidate has the requirement\n"
+        requirements_scoring += "CRITICAL SCORING RULES — read carefully, the previous version of these rules was being interpreted too loosely:\n"
+        requirements_scoring += "- LITERAL MATCH ONLY. The resume must EXPLICITLY show the requirement, not a similar or related qualification.\n"
+        requirements_scoring += "  * If a requirement lists specific job titles (e.g. \"Forward Deployed Engineer, Implementation Engineer, or Solutions Engineer\"), "
+        requirements_scoring += "ONLY those exact titles count. Titles like \"AI/ML Engineer\", \"Software Engineer\", \"Data Scientist\" are NOT matches — score 0.\n"
+        requirements_scoring += "  * If a requirement specifies a credential (e.g. \"PhD in Computer Science\"), only that exact credential counts. A Master's degree is NOT a PhD — score 0.\n"
+        requirements_scoring += "  * If a requirement specifies a quantity (e.g. \"5+ years of Python\"), the resume must show at least that much cumulative experience. "
+        requirements_scoring += "3 years of Python is NOT \"5+ years\" — score 0.\n"
+        requirements_scoring += "  * If a requirement specifies a technology or skill (e.g. \"experience with Kubernetes\"), the resume must literally mention it.\n"
+        requirements_scoring += "- NO partial credit. Award either the full weight or zero — never something in between.\n"
+        requirements_scoring += "- DEFAULT TO ZERO when in doubt. If you are not 100% certain the candidate meets the requirement based on explicit resume text, score 0.\n"
+        requirements_scoring += "- DO NOT INFER. Do not award credit because the candidate \"probably\" or \"likely\" has the skill based on adjacent work. "
+        requirements_scoring += "Score 0 unless the resume explicitly states it.\n"
+        requirements_scoring += "- DO NOT GENERALIZE. \"Worked on AI products\" does not mean the candidate has the title AI Engineer. "
+        requirements_scoring += "\"Used Python\" does not satisfy \"5+ years of Python expertise\". Match the LITERAL text, not the spirit.\n"
+        requirements_scoring += "- For each requirement that you award full points, you must be able to quote a specific phrase from the resume that LITERALLY matches.\n"
 
     # Build the prompt
     if technical_indicators:
@@ -178,7 +195,8 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            temperature=0,
         )
         return response.choices[0].message.content or "{}"
     
