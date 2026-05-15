@@ -133,7 +133,10 @@ def render_resume_with_highlights(resume_text: str, employment_history: list) ->
     for ent in sorted(entities, key=len, reverse=True):
         escaped_ent = _html.escape(ent)
         if escaped_ent in safe_text:
-            safe_text = safe_text.replace(escaped_ent, f"<strong>{escaped_ent}</strong>")
+            safe_text = safe_text.replace(
+                escaped_ent,
+                f"<mark style='background-color: #fff59d; padding: 0 2px;'>{escaped_ent}</mark>",
+            )
 
     return (
         "<pre style='white-space: pre-wrap; word-wrap: break-word; "
