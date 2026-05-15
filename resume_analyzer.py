@@ -30,17 +30,17 @@ def get_company_research(company_name: str) -> str:
         return ""
 
 def analyze_single_resume(resume_text: str, job_description: Optional[str], weighted_requirements: list[dict], jd_weight: float, technical_indicators: Optional[dict] = None, disqualifiers: Optional[list[str]] = None) -> dict:
-    # --- 1. Extract Top 2 Companies ---
+    # --- 1. Extract Top 4 Companies ---
     try:
         name_extract = openai_client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": f"List the 2 most recent unique employers from this resume. Return ONLY company names separated by a comma.\n\n{resume_text[:1500]}"}]
+            messages=[{"role": "user", "content": f"List the 4 most recent unique employers from this resume. Return ONLY company names separated by a comma.\n\n{resume_text[:2500]}"}]
         )
         companies = [c.strip() for c in name_extract.choices[0].message.content.split(",")]
-        
+
         # --- 2. Research Them ---
         research_data = []
-        for co in companies[:2]: # Safety limit to 2
+        for co in companies[:4]:  # Safety limit to 4
             info = get_company_research(co)
             if info:
                 research_data.append(f"{co}: {info}")
@@ -150,11 +150,19 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
         requirements_scoring += "  - Industry / company type (e.g. \"experience at a B2B SaaS company\", \"fintech background\", \"healthcare experience\")\n"
         requirements_scoring += "  - Domain or sector exposure (e.g. \"worked on enterprise products\", \"consumer-facing\")\n"
         requirements_scoring += "  - General functional experience implied by role (e.g. \"led teams\", \"customer-facing role\")\n"
-        requirements_scoring += "  For Category B: USE the COMPANY RESEARCH context above AND your general knowledge of well-known companies. "
-        requirements_scoring += "If the candidate worked at a company you know fits the description, award full credit.\n"
-        requirements_scoring += "  Example: requirement \"experience at a B2B SaaS company\" + resume shows Scale AI = full credit. Scale AI is a known B2B SaaS company.\n"
-        requirements_scoring += "  Example: requirement \"fintech experience\" + resume shows Stripe = full credit.\n"
-        requirements_scoring += "  Example: requirement \"big tech experience\" + resume shows Google = full credit.\n\n"
+        requirements_scoring += "  For Category B, award full credit if ANY of the following is true:\n"
+        requirements_scoring += "    (1) The candidate worked at a company you recognize (from the COMPANY RESEARCH context above or your general knowledge) that fits the description.\n"
+        requirements_scoring += "        - Example: \"B2B SaaS\" + Scale AI = full credit.\n"
+        requirements_scoring += "        - Example: \"fintech\" + Stripe = full credit.\n"
+        requirements_scoring += "        - Example: \"big tech\" + Google = full credit.\n"
+        requirements_scoring += "    (2) The resume EXPLICITLY states the qualification in a Summary, Skills, About, or job-description section, "
+        requirements_scoring += "AND no company on the resume contradicts that claim. This handles candidates from small/unknown companies.\n"
+        requirements_scoring += "        - Example: requirement \"fintech experience\" + resume summary says \"5 years building payments and lending platforms\" "
+        requirements_scoring += "with employers you don't recognize = full credit (claim is explicit, nothing contradicts it).\n"
+        requirements_scoring += "        - Counter-example: requirement \"fintech experience\" + resume claims fintech but every listed employer is "
+        requirements_scoring += "clearly non-fintech (e.g. all furniture retailers, hospitals) = 0 (claim is contradicted by employer history).\n"
+        requirements_scoring += "        - Counter-example: requirement \"fintech experience\" + resume makes no fintech claim anywhere and no listed "
+        requirements_scoring += "company is fintech = 0 (nothing to support the claim).\n\n"
         requirements_scoring += "GENERAL RULES:\n"
         requirements_scoring += "- NO partial credit ever. Either full weight or zero.\n"
         requirements_scoring += "- For Category A: if you are not certain the literal claim is met, award 0.\n"
