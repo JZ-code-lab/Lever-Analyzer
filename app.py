@@ -1000,7 +1000,6 @@ elif st.session_state.current_step == 2:
         st.markdown("---")
         st.markdown("**Disqualifiers** (Optional)")
         st.caption("If a candidate has any of these, they automatically score 0/100.")
-        st.caption("💡 Phrase each disqualifier as a *positive* condition that should knock the candidate out — e.g. `worked in India in the past 6 years`, NOT `did not work in India in the past 6 years`.")
 
         disqualifiers_to_remove = []
         for i, dq in enumerate(st.session_state.disqualifiers):
