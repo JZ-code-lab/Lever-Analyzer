@@ -150,6 +150,68 @@ REGION_MAPPINGS = {
 }
 
 
+# US area code -> representative "City, ST". Used as the last-resort
+# location source when Lever and the resume have no usable location.
+# libphonenumber's geocoder only returns state-level for US numbers, which
+# is too coarse to match a city/region filter, so we map the major metros
+# explicitly. Each value is a city that lives inside the relevant
+# REGION_MAPPINGS entry so it flows through region matching correctly.
+US_AREA_CODE_LOCATIONS = {
+    # San Francisco Bay Area
+    "415": "San Francisco, CA", "628": "San Francisco, CA",
+    "510": "Oakland, CA", "341": "Oakland, CA",
+    "650": "Palo Alto, CA",
+    "408": "San Jose, CA", "669": "San Jose, CA",
+    "925": "Walnut Creek, CA",
+    "707": "Santa Rosa, CA",
+    # Sacramento (not Bay Area — correctly excluded by a Bay filter)
+    "916": "Sacramento, CA", "279": "Sacramento, CA",
+    # Greater Los Angeles
+    "213": "Los Angeles, CA", "323": "Los Angeles, CA", "310": "Los Angeles, CA",
+    "424": "Los Angeles, CA", "818": "Los Angeles, CA", "747": "Los Angeles, CA",
+    "661": "Los Angeles, CA", "626": "Pasadena, CA", "562": "Long Beach, CA",
+    # Orange County
+    "714": "Santa Ana, CA", "657": "Santa Ana, CA", "949": "Irvine, CA",
+    # San Diego
+    "619": "San Diego, CA", "858": "San Diego, CA", "760": "San Diego, CA",
+    "442": "San Diego, CA",
+    # Seattle metro
+    "206": "Seattle, WA", "425": "Bellevue, WA", "253": "Tacoma, WA",
+    # NYC metro
+    "212": "New York, NY", "646": "New York, NY", "332": "New York, NY",
+    "917": "New York, NY", "718": "Brooklyn, NY", "347": "Brooklyn, NY",
+    "929": "Queens, NY", "201": "Jersey City, NJ", "551": "Jersey City, NJ",
+    "973": "Newark, NJ", "862": "Newark, NJ",
+    # Greater Boston
+    "617": "Boston, MA", "857": "Boston, MA",
+    # DC metro
+    "202": "Washington, DC", "703": "Arlington, VA", "571": "Arlington, VA",
+    # Chicago metro
+    "312": "Chicago, IL", "872": "Chicago, IL", "773": "Chicago, IL",
+    # Dallas metro
+    "214": "Dallas, TX", "469": "Dallas, TX", "972": "Dallas, TX",
+    "817": "Fort Worth, TX", "682": "Fort Worth, TX",
+    # Houston metro
+    "713": "Houston, TX", "281": "Houston, TX", "832": "Houston, TX",
+    "346": "Houston, TX",
+    # Austin metro
+    "512": "Austin, TX", "737": "Austin, TX",
+    # Atlanta metro
+    "404": "Atlanta, GA", "470": "Atlanta, GA", "678": "Atlanta, GA",
+    "770": "Atlanta, GA",
+    # Phoenix metro
+    "602": "Phoenix, AZ", "480": "Phoenix, AZ", "623": "Phoenix, AZ",
+    # Philadelphia metro
+    "215": "Philadelphia, PA", "267": "Philadelphia, PA", "445": "Philadelphia, PA",
+    # Miami metro
+    "305": "Miami, FL", "786": "Miami, FL",
+    # Denver metro
+    "303": "Denver, CO", "720": "Denver, CO",
+    # Portland metro
+    "503": "Portland, OR", "971": "Portland, OR",
+}
+
+
 def expand_region(location: str) -> list[str]:
     """
     Expand a region name into its constituent cities.
@@ -373,16 +435,26 @@ def get_location_from_phone_number(phone_number: str) -> Optional[str]:
         # Clean the phone number
         phone_clean = re.sub(r'[^\d+]', '', phone_number)
 
-        # If it doesn't start with +, assume US and add +1
+        # Pull just the digits and normalize a US 11-digit (1 + 10) down to 10.
+        digits = re.sub(r'\D', '', phone_clean)
+        if len(digits) == 11 and digits.startswith('1'):
+            digits = digits[1:]
+
+        # US number: map the 3-digit area code to a representative city.
+        # This is the meaningful signal for city/region filters; do it
+        # BEFORE libphonenumber, whose US geocoding is only state-level.
+        if len(digits) == 10:
+            area_code = digits[:3]
+            mapped = US_AREA_CODE_LOCATIONS.get(area_code)
+            if mapped:
+                return mapped
+
+        # Fallback: libphonenumber geocoder (handles international numbers
+        # and gives state-level info for US area codes not in our map).
         if not phone_clean.startswith('+'):
             phone_clean = '+1' + phone_clean
-
-        # Parse the phone number
         parsed = phonenumbers.parse(phone_clean, None)
-
-        # Get the location description
         location = geocoder.description_for_number(parsed, "en")
-
         if location:
             return location
 
