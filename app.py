@@ -1354,6 +1354,17 @@ elif st.session_state.current_step == 2:
                             analysis_progress.progress(completed / total)
                             analysis_status.text(f"Analyzed {completed}/{total} candidates")
 
+                        def save_partial(partial_results):
+                            # Persist a snapshot mid-run so an interrupted
+                            # analysis keeps everything done so far.
+                            ranked = sorted(
+                                partial_results,
+                                key=lambda x: x["analysis"].get("overall_score", 0),
+                                reverse=True,
+                            )
+                            st.session_state.analysis_results = ranked
+                            save_session_state()
+
                         try:
                             results = analyze_candidates_batch(
                                 candidates_with_resumes=candidates_with_resumes,
@@ -1362,7 +1373,8 @@ elif st.session_state.current_step == 2:
                                 jd_weight=st.session_state.jd_weight,
                                 require_hands_on_coding=st.session_state.require_hands_on_coding,
                                 progress_callback=update_progress,
-                                disqualifiers=active_disqualifiers
+                                disqualifiers=active_disqualifiers,
+                                partial_callback=save_partial,
                             )
 
                             # Show filtering results if hands-on coding filter was enabled

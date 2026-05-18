@@ -329,7 +329,7 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
     except:
         return {"overall_score": 0, "summary": "Analysis error", "error": True}
 
-def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_requirements, jd_weight, require_hands_on_coding=False, progress_callback=None, disqualifiers=None):
+def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_requirements, jd_weight, require_hands_on_coding=False, progress_callback=None, disqualifiers=None, partial_callback=None):
     results = []
 
     # If hands-on coding filter is enabled, first enrich and filter candidates
@@ -372,7 +372,16 @@ def analyze_candidates_batch(candidates_with_resumes, job_description, weighted_
             except:
                 failed_item = candidates_with_resumes[futures[future]]
                 results.append({"candidate": failed_item["candidate"], "analysis": {"overall_score": 0}, "resume_text": failed_item.get("resume_text", "")})
-            if progress_callback: progress_callback(len(results), len(candidates_with_resumes))
+            if progress_callback:
+                progress_callback(len(results), len(candidates_with_resumes))
+            # Persist partial progress every 10 candidates so an interrupted
+            # run (e.g. browser tab idles and the Streamlit socket drops)
+            # keeps everything analyzed so far instead of losing the batch.
+            if partial_callback and len(results) % 10 == 0:
+                try:
+                    partial_callback(list(results))
+                except Exception as cb_err:
+                    print(f"partial_callback failed: {cb_err}")
 
     results.sort(key=lambda x: x["analysis"].get("overall_score", 0), reverse=True)
     return results
