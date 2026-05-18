@@ -253,84 +253,70 @@ def normalize_location(location: str) -> dict:
     return result
 
 
-def locations_match(location1: str, location2: str, _expanded: bool = False) -> bool:
+def locations_match(filter_location: str, candidate_location: str, _expanded: bool = False) -> bool:
     """
-    Check if two location strings match, accounting for:
-    - Regional areas (e.g., "Bay Area" matches "San Francisco", "Oakland", etc.)
-    - US state names vs abbreviations
-    - Country name variations
-    - Partial city matches
-    - Case insensitivity
+    Return True if `candidate_location` falls within `filter_location`.
+
+    Matching is anchored to the MOST SPECIFIC component the FILTER provides:
+      - region  -> candidate must be in one of the region's constituent cities
+      - city    -> candidate's city must be that city (states must agree if both given)
+      - state   -> candidate's state must match (filter gave no city)
+      - country -> candidate's country must match (filter gave no city/state)
+
+    This is the key correctness rule: a city or region filter (e.g.
+    "San Jose, CA" or "San Francisco Bay Area") must NOT match every
+    candidate in the same state (Los Angeles, San Diego, etc.). It only
+    falls back to state/country matching when the filter itself is
+    specified only at that level.
     """
-    if not location1 or not location2:
+    if not filter_location or not candidate_location:
         return False
 
-    # Check if location1 is a region - if so, expand it to cities
-    # Only do this on first call to avoid infinite recursion
+    # If the filter is a known region, the candidate must be in one of its
+    # constituent cities. Being in the same STATE is NOT being in the region,
+    # so there is deliberately no looser fallback here.
     if not _expanded:
-        expanded_locations = expand_region(location1)
-
-        # If location1 was expanded to multiple cities, check if location2 matches any of them
-        if len(expanded_locations) > 1:
-            for city in expanded_locations:
-                if locations_match(city, location2, _expanded=True):
+        expanded = expand_region(filter_location)
+        if len(expanded) > 1:
+            for city in expanded:
+                if locations_match(city, candidate_location, _expanded=True):
                     return True
-            # If no city matched, fall through to try matching the original region name
+            return False
 
-    # Normalize both locations
-    norm1 = normalize_location(location1)
-    norm2 = normalize_location(location2)
+    norm_f = normalize_location(filter_location)
+    norm_c = normalize_location(candidate_location)
 
-    # Direct string match (case insensitive)
-    if norm1["original"].lower() == norm2["original"].lower():
+    # Exact original-string match (case-insensitive)
+    if norm_f["original"].lower().strip() == norm_c["original"].lower().strip():
         return True
 
-    # Check country match
-    if norm1["country"] and norm2["country"]:
-        if norm1["country"].lower() == norm2["country"].lower():
-            # If both have countries and they match, check if states match (if applicable)
-            if norm1["state"] and norm2["state"]:
-                return norm1["state"].lower() == norm2["state"].lower()
-            # If only one has a state, we still consider it a match (country level)
+    # 1) Filter specifies a CITY -> candidate must be in that same city.
+    if norm_f["city"]:
+        if not norm_c["city"]:
+            return False
+        fc = norm_f["city"].lower().strip()
+        cc_ = norm_c["city"].lower().strip()
+        # Same city, or one city string contains the other (handles
+        # "San Jose" vs "Greater San Jose Area"). NOT a state/word fallback.
+        if fc == cc_ or fc in cc_ or cc_ in fc:
+            # If both sides also carry a state, the states must agree
+            # (guards against same-named cities, e.g. Portland OR vs ME).
+            if norm_f["state"] and norm_c["state"]:
+                return norm_f["state"].lower() == norm_c["state"].lower()
             return True
-        # Different countries = no match
         return False
 
-    # Check US state match (by name or abbreviation)
-    if norm1["state"] and norm2["state"]:
-        return norm1["state"].lower() == norm2["state"].lower()
+    # 2) Filter specifies only a STATE -> candidate's state must match.
+    if norm_f["state"]:
+        if norm_c["state"]:
+            return norm_f["state"].lower() == norm_c["state"].lower()
+        return False
 
-    # Check if one is a state and the other mentions USA
-    if norm1["state"] and norm2["country"] and "united states" in norm2["country"].lower():
-        return True
-    if norm2["state"] and norm1["country"] and "united states" in norm1["country"].lower():
-        return True
-
-    # Check city partial match
-    if norm1["city"] and norm2["city"]:
-        city1_lower = norm1["city"].lower()
-        city2_lower = norm2["city"].lower()
-        # Partial match: one city name contains the other
-        if city1_lower in city2_lower or city2_lower in city1_lower:
-            return True
-
-    # Check if any part of one location appears in the other (partial match)
-    loc1_lower = norm1["original"].lower()
-    loc2_lower = norm2["original"].lower()
-
-    # Split into words and check for significant word overlap
-    words1 = set(re.split(r'[\s,;/\-]+', loc1_lower))
-    words2 = set(re.split(r'[\s,;/\-]+', loc2_lower))
-
-    # Remove very short words and common city prefixes that are too generic
-    common_prefixes = {'san', 'los', 'new', 'fort', 'saint', 'st', 'mount', 'mt', 'east', 'west', 'north', 'south'}
-    words1 = {w for w in words1 if len(w) > 1 and w not in common_prefixes}
-    words2 = {w for w in words2 if len(w) > 1 and w not in common_prefixes}
-
-    # If there's significant overlap (at least one meaningful word)
-    overlap = words1.intersection(words2)
-    if overlap:
-        return True
+    # 3) Filter specifies only a COUNTRY -> candidate's country must match.
+    if norm_f["country"]:
+        if norm_c["country"]:
+            return norm_f["country"].lower() == norm_c["country"].lower()
+        return False
 
     return False
 
