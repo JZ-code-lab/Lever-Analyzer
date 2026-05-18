@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 from lever_client import (
     fetch_all_postings,
@@ -340,6 +341,16 @@ with st.sidebar:
         st.session_state.recent_stage_changes = {}
         clear_session_cache()
         st.rerun()
+
+    # Reload Page — clean re-sync with the server when the browser view
+    # goes stale after a long idle (does a true page reload, which
+    # re-establishes the Streamlit websocket; equivalent to Ctrl+Shift+R).
+    if st.button("↻ Reload Page", type="secondary", use_container_width=True,
+                 help="If the page looks stuck or shows partial/old results after you've been away, click this to re-sync with the server. Your analysis is not lost."):
+        components.html(
+            "<script>window.parent.location.reload();</script>",
+            height=0,
+        )
 
     st.markdown("---")
     st.header("🌍 Filters")
