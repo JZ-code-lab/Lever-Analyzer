@@ -562,6 +562,25 @@ if st.session_state.analysis_results:
         else:
             stages_cache = get_lever_stages()
 
+            # After a completed bulk run, wipe the widget state so the
+            # checkboxes/sliders/dropdowns come back at their defaults
+            # instead of staying checked from the previous run.
+            if st.session_state.get("bulk_reset_pending"):
+                for _k in (
+                    "bulk_enable_promote", "bulk_promote_threshold", "bulk_promote_stage",
+                    "bulk_enable_archive", "bulk_archive_use_score", "bulk_archive_threshold",
+                    "bulk_archive_use_disqualified", "bulk_archive_reason",
+                    "bulk_actions_armed",
+                ):
+                    st.session_state.pop(_k, None)
+                st.session_state.bulk_reset_pending = False
+
+            # Show the outcome of the last bulk run (survives the reset rerun).
+            _bulk_msg = st.session_state.pop("bulk_result_message", None)
+            if _bulk_msg:
+                _kind, _text = _bulk_msg
+                (st.success if _kind == "success" else st.error)(_text)
+
             # --- Move (promote) rule ---
             st.markdown("**📈 Move high scorers to a stage**")
             enable_promote = st.checkbox("Enable move rule", key="bulk_enable_promote")
@@ -772,13 +791,22 @@ if st.session_state.analysis_results:
                         save_session_state()
 
                         if failed:
-                            st.error(f"Completed {succeeded}/{total}. {len(failed)} failed:")
+                            lines = [f"Completed {succeeded}/{total}. {len(failed)} failed:"]
                             for fname, fkind, ferr in failed[:10]:
-                                st.caption(f"• {fname} ({fkind}): {ferr}")
+                                lines.append(f"- {fname} ({fkind}): {ferr}")
                             if len(failed) > 10:
-                                st.caption(f"...and {len(failed) - 10} more.")
+                                lines.append(f"- ...and {len(failed) - 10} more.")
+                            st.session_state.bulk_result_message = ("error", "\n".join(lines))
                         else:
-                            st.success(f"✅ Completed all {succeeded} operation{'s' if succeeded != 1 else ''}.")
+                            st.session_state.bulk_result_message = (
+                                "success",
+                                f"✅ Completed all {succeeded} operation{'s' if succeeded != 1 else ''}.",
+                            )
+
+                        # Reset the bulk widgets on the next render and rerun
+                        # so the user doesn't have to manually uncheck them.
+                        st.session_state.bulk_reset_pending = True
+                        st.rerun()
 
     if not results:
         st.warning(f"No candidates found with score ≥ {st.session_state.minimum_score}. Try adjusting the minimum score filter.")
