@@ -68,6 +68,8 @@ PERSISTED_KEYS = [
     "location_filters",
     "require_hands_on_coding",
     "recent_stage_changes",
+    "lever_stages_cache",
+    "archive_reasons_cache",
 ]
 
 
@@ -104,6 +106,25 @@ def clear_session_cache() -> None:
             os.remove(SESSION_CACHE_PATH)
     except Exception as e:
         print(f"Failed to clear session cache: {e}")
+
+
+def get_lever_stages() -> list:
+    """Return the Lever stages, fetching on-demand if the cache is empty.
+
+    The cache is populated during analysis but is NOT part of the
+    persisted session snapshot, so after a page reload / session restore
+    it comes back empty. Any stage operation (move/archive) must be able
+    to repopulate it itself rather than failing with an empty match list.
+    """
+    cache = st.session_state.get("lever_stages_cache")
+    if not cache:
+        try:
+            cache = fetch_all_stages()
+            st.session_state.lever_stages_cache = cache
+        except Exception as e:
+            st.error(f"Could not fetch Lever stages: {e}")
+            cache = []
+    return cache or []
 
 
 def find_lever_stage_match(user_label: str, stages: list) -> dict | None:
@@ -539,7 +560,7 @@ if st.session_state.analysis_results:
         if not lever_perform_as_user_id:
             st.warning("Set LEVER_PERFORM_AS_USER_ID on Render to enable bulk actions.")
         else:
-            stages_cache = st.session_state.get("lever_stages_cache") or []
+            stages_cache = get_lever_stages()
 
             # --- Move (promote) rule ---
             st.markdown("**📈 Move high scorers to a stage**")
@@ -858,7 +879,7 @@ if st.session_state.analysis_results:
                     st.markdown("**Change Stage in Lever:**")
 
                     opportunity_id = candidate.get("id", "")
-                    stages_cache = st.session_state.get("lever_stages_cache") or []
+                    stages_cache = get_lever_stages()
                     stage_id_to_name = {s.get("id"): s.get("text", "") for s in stages_cache}
 
                     # Current stage label (or "archived")
