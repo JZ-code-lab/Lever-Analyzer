@@ -156,12 +156,13 @@ def find_lever_stage_match(user_label: str, stages: list) -> dict | None:
 # ----- Resume rendering with highlighted entities -----
 import html as _html
 
-def render_resume_with_highlights(resume_text: str, employment_history: list) -> str:
-    """Return an HTML <pre> block with companies/titles/dates wrapped in <strong>.
+def render_resume_with_highlights(resume_text: str, employment_history: list, education_history: list = None) -> str:
+    """Return an HTML <pre> block with companies/titles/dates and
+    schools/degrees wrapped in a yellow highlight.
 
     The LLM is asked to return the entity strings verbatim from the resume; we
     HTML-escape the resume first, then string-replace each entity with its
-    bolded form. Longest entities are replaced first so a long company name
+    highlighted form. Longest entities are replaced first so a long name
     doesn't get partially clobbered by a shorter substring match.
     """
     if not resume_text:
@@ -175,6 +176,13 @@ def render_resume_with_highlights(resume_text: str, employment_history: list) ->
             continue
         for key in ("company", "title", "dates"):
             val = emp.get(key, "")
+            if isinstance(val, str) and len(val.strip()) >= 3:
+                entities.add(val.strip())
+    for edu in (education_history or []):
+        if not isinstance(edu, dict):
+            continue
+        for key in ("school", "degree"):
+            val = edu.get(key, "")
             if isinstance(val, str) and len(val.strip()) >= 3:
                 entities.add(val.strip())
 
@@ -843,10 +851,11 @@ if st.session_state.analysis_results:
                     st.markdown("**Resume:**")
                     resume_text = result.get("resume_text", "")
                     employment_history = analysis.get("employment_history", [])
+                    education_history = analysis.get("education_history", [])
                     with st.container(height=600, border=True):
                         if resume_text:
                             st.markdown(
-                                render_resume_with_highlights(resume_text, employment_history),
+                                render_resume_with_highlights(resume_text, employment_history, education_history),
                                 unsafe_allow_html=True,
                             )
                         else:
