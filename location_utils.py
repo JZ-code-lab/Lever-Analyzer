@@ -210,16 +210,57 @@ REGION_MAPPINGS = {
         "miami beach", "coral springs", "pembroke pines", "hollywood", "doral"
     ],
     "denver metro": [
-        "denver", "aurora", "lakewood", "centennial", "boulder", "arvada",
-        "westminster", "thornton", "broomfield", "longmont", "castle rock"
+        # Denver core
+        "denver", "glendale", "edgewater", "mountain view", "lakeside",
+        # Adams County
+        "aurora", "thornton", "westminster", "commerce city", "brighton",
+        "northglenn", "federal heights", "bennett", "strasburg", "watkins",
+        "welby", "derby", "sherrelwood", "twin lakes", "berkley",
+        # Arapahoe County
+        "centennial", "englewood", "greenwood village", "cherry hills village",
+        "sheridan", "columbine valley", "foxfield", "byers", "deer trail",
+        # Douglas County
+        "castle rock", "parker", "highlands ranch", "lone tree",
+        "castle pines", "the pinery", "stonegate", "roxborough park",
+        "sedalia", "larkspur", "franktown",
+        # Jefferson County
+        "lakewood", "arvada", "wheat ridge", "golden", "littleton",
+        "morrison", "evergreen", "conifer", "ken caryl", "columbine",
+        "applewood", "genesee", "indian hills", "bow mar",
+        # Broomfield County
+        "broomfield",
+        # Boulder County
+        "boulder", "longmont", "lafayette", "louisville", "superior",
+        "erie", "niwot", "gunbarrel", "nederland", "eldorado springs",
+        "lyons", "jamestown", "allenspark",
+        # Clear Creek / Gilpin (mountain communities)
+        "idaho springs", "georgetown", "black hawk", "central city",
+        "empire", "dumont", "silver plume",
+        # Elbert County
+        "elizabeth", "kiowa", "elbert"
     ],
     "portland metro": [
         "portland", "vancouver", "gresham", "hillsboro", "beaverton", "bend",
         "salem", "eugene", "tigard", "lake oswego"
     ],
     "austin metro": [
-        "austin", "round rock", "georgetown", "pflugerville", "cedar park",
-        "san marcos", "kyle", "buda", "leander", "hutto"
+        # Travis County
+        "austin", "pflugerville", "lakeway", "bee cave", "west lake hills",
+        "rollingwood", "sunset valley", "lago vista", "jonestown", "manor",
+        "webberville", "creedmoor", "mustang ridge", "the hills",
+        "briarcliff", "point venture", "san leanna", "volente",
+        "del valle", "manchaca", "jollyville", "anderson mill",
+        # Williamson County
+        "round rock", "georgetown", "cedar park", "leander", "hutto",
+        "taylor", "liberty hill", "jarrell", "florence", "granger",
+        "coupland", "weir", "thrall", "brushy creek", "serenada",
+        # Hays County
+        "san marcos", "kyle", "buda", "dripping springs", "wimberley",
+        "woodcreek", "mountain city", "niederwald", "uhland", "bear creek",
+        # Bastrop County
+        "bastrop", "smithville", "elgin", "cedar creek", "mcdade", "paige",
+        # Caldwell County
+        "lockhart", "luling", "martindale"
     ]
 }
 
