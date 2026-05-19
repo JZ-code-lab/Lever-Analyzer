@@ -570,10 +570,20 @@ def get_candidate_location_multi_source(candidate: dict, resume_text: Optional[s
         elif phones:
             phone_numbers.append(str(phones))
 
-    # Also check contact field
+    # Also check the (expanded) contact object. Lever's Contact carries a
+    # `phones` list ([{value, type}, ...]); older code only looked for a
+    # singular `phone`, so contact phone numbers were being missed.
     contact = candidate.get("contact", {})
-    if isinstance(contact, dict) and "phone" in contact:
-        phone_numbers.append(str(contact["phone"]))
+    if isinstance(contact, dict):
+        contact_phones = contact.get("phones")
+        if isinstance(contact_phones, list):
+            for phone_obj in contact_phones:
+                if isinstance(phone_obj, dict):
+                    phone_numbers.append(phone_obj.get("value", ""))
+                else:
+                    phone_numbers.append(str(phone_obj))
+        if contact.get("phone"):
+            phone_numbers.append(str(contact["phone"]))
 
     # Extract phones from resume text
     if resume_text:

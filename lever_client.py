@@ -180,7 +180,12 @@ def _fetch_candidates_with_status(posting_id: str, archived: bool) -> list[dict]
         params = {
             "posting_id": posting_id,
             "limit": 100,
-            "archived": "true" if archived else "false"
+            "archived": "true" if archived else "false",
+            # Inline the Contact object so each candidate carries its
+            # location / phones / emails. Without this, `contact` is just
+            # an ID string and the candidate's Lever location (priority #1
+            # location source) is never available to the filter.
+            "expand": "contact",
         }
 
         if offset:
