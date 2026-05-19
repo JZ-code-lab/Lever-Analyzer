@@ -212,9 +212,50 @@ US_AREA_CODE_LOCATIONS = {
 }
 
 
+# Each region's US state. Used to state-qualify the expanded city list so a
+# same-named city in another state (e.g. Fairfax VA vs Fairfax CA in the Bay
+# Area, Kent OH vs Kent WA in Greater Seattle) does NOT match. None = region
+# legitimately spans multiple states; cities stay unqualified for those.
+REGION_STATES = {
+    "bay area": "CA",
+    "silicon valley": "CA",
+    "greater los angeles": "CA",
+    "orange county": "CA",
+    "greater seattle": "WA",
+    "seattle metro": "WA",
+    "greater boston": "MA",
+    "dmv": None,            # DC / MD / VA
+    "nyc metro": None,      # NY / NJ
+    "new york metro": None, # NY / NJ
+    "tri-state": None,      # NY / NJ / CT
+    "chicago metro": "IL",
+    "dallas metro": "TX",
+    "houston metro": "TX",
+    "atlanta metro": "GA",
+    "phoenix metro": "AZ",
+    "philadelphia metro": None,  # PA / NJ / DE
+    "miami metro": "FL",
+    "denver metro": "CO",
+    "portland metro": "OR",
+    "austin metro": "TX",
+}
+
+
+def get_region_state(location: str) -> Optional[str]:
+    """Return the US state abbreviation for a region filter, or None if the
+    string is not a recognized single-state region."""
+    location_lower = location.lower().strip()
+    for region_name in REGION_MAPPINGS:
+        if region_name in location_lower:
+            return REGION_STATES.get(region_name)
+    return None
+
+
 def expand_region(location: str) -> list[str]:
     """
-    Expand a region name into its constituent cities.
+    Expand a region name into its constituent cities, state-qualified when
+    the region belongs to a single state (so "Fairfax, CA" from the Bay Area
+    cannot match "Fairfax, VA").
 
     Args:
         location: Location string that might be a region name
@@ -227,7 +268,10 @@ def expand_region(location: str) -> list[str]:
     # Check if this is a known region
     for region_name, cities in REGION_MAPPINGS.items():
         if region_name in location_lower:
-            return cities
+            state = REGION_STATES.get(region_name)
+            if state:
+                return [f"{c}, {state}" for c in cities]
+            return list(cities)
 
     # Not a region, return as-is
     return [location]
@@ -670,15 +714,20 @@ def filter_candidates_by_location_fast(candidates: list[dict], location_filter: 
     # Normalize all filter locations to understand what we're filtering for
     filter_locations_normalized = [normalize_location(f) for f in location_filters]
 
-    # Pre-expand all filter locations and normalize them for fast lookup
+    # Pre-expand all filter locations. For region cities we record the set of
+    # acceptable state abbreviations per city name so a same-named city in a
+    # different state (Fairfax VA vs Fairfax CA) is NOT treated as a match.
+    # None in the set means the region legitimately spans states (no state
+    # constraint for that city).
     expanded_filters = []
-    expanded_cities_lower = set()  # For fast city name lookup
+    expanded_city_states = {}  # city_name_lower -> set of acceptable state abbrs / None
     for filter_loc in location_filters:
         expanded = expand_region(filter_loc)
         if len(expanded) > 1:
-            # Region expanded to multiple cities - add all to fast lookup set
             for city in expanded:
-                expanded_cities_lower.add(city.lower())
+                cnorm = normalize_location(city)
+                ckey = (cnorm["city"] or city).lower().strip()
+                expanded_city_states.setdefault(ckey, set()).add(cnorm.get("state_abbr"))
                 expanded_filters.append((city, True))
         else:
             expanded_filters.append((filter_loc, False))
@@ -712,23 +761,34 @@ def filter_candidates_by_location_fast(candidates: list[dict], location_filter: 
         # Normalize candidate location once
         candidate_norm = normalize_location(candidate_location)
 
-        # OPTIMIZATION: For region filters (like Bay Area with 80 cities), use fast set lookup
-        # instead of calling locations_match 80 times
+        # OPTIMIZATION: For region filters (like Bay Area with ~80 cities),
+        # use a fast city+state lookup instead of calling locations_match
+        # for every city.
         is_match = False
 
-        # Quick check: if candidate has a city and it's in our expanded cities set, it's a match
-        if candidate_norm["city"] and expanded_cities_lower:
-            candidate_city_lower = candidate_norm["city"].lower()
-            if candidate_city_lower in expanded_cities_lower:
-                matched.append(candidate)
-                is_match = True
-                continue
+        if candidate_norm["city"] and expanded_city_states:
+            ckey = candidate_norm["city"].lower().strip()
+            if ckey in expanded_city_states:
+                allowed = expanded_city_states[ckey]
+                cand_state = candidate_norm.get("state_abbr")
+                allowed_abbrs = {s.upper() for s in allowed if s}
+                # Match if: the region imposes no state constraint (None),
+                # the candidate's state is one the region allows, or the
+                # candidate carries no state at all (rare; Lever usually
+                # includes it). A city-name hit with a *conflicting* state
+                # is deliberately NOT a match.
+                if None in allowed or not cand_state or cand_state.upper() in allowed_abbrs:
+                    matched.append(candidate)
+                    is_match = True
+                    continue
 
-        # If not a quick match, do full matching (for non-expanded filters or edge cases)
+        # Full matching for non-expanded (plain city/state) filters. Expanded
+        # region filters are authoritatively handled by the lookup above, so
+        # they are skipped here (a city+wrong-state hit must NOT fall through
+        # to looser matching).
         if not is_match:
             for filter_loc, is_expanded in expanded_filters:
-                # Skip expanded filters if we already checked via set lookup
-                if is_expanded and expanded_cities_lower:
+                if is_expanded:
                     continue
                 if locations_match(filter_loc, candidate_location, _expanded=is_expanded):
                     matched.append(candidate)
