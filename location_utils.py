@@ -42,9 +42,56 @@ REGION_MAPPINGS = {
         "campbell", "saratoga", "los gatos"
     ],
     "greater los angeles": [
-        "los angeles", "santa monica", "pasadena", "glendale", "burbank",
-        "long beach", "anaheim", "irvine", "santa ana", "torrance",
-        "inglewood", "el segundo", "culver city", "beverly hills"
+        # City of LA + commonly-listed LA neighborhoods
+        "los angeles", "hollywood", "west hollywood", "north hollywood",
+        "downtown los angeles", "east los angeles", "south los angeles",
+        # Westside
+        "santa monica", "venice", "marina del rey", "culver city",
+        "beverly hills", "brentwood", "westwood", "west los angeles",
+        "mar vista", "playa vista", "playa del rey", "pacific palisades",
+        "malibu", "topanga",
+        # South Bay
+        "el segundo", "manhattan beach", "hermosa beach", "redondo beach",
+        "torrance", "gardena", "hawthorne", "lawndale", "lomita", "carson",
+        "san pedro", "wilmington", "harbor city", "palos verdes estates",
+        "rancho palos verdes", "rolling hills estates", "inglewood", "compton",
+        # Gateway / Southeast LA
+        "long beach", "signal hill", "lakewood", "bellflower", "paramount",
+        "downey", "norwalk", "cerritos", "artesia", "lynwood", "south gate",
+        "cudahy", "bell", "bell gardens", "maywood", "huntington park",
+        "vernon", "commerce", "montebello", "pico rivera", "santa fe springs",
+        "whittier", "la mirada",
+        # San Gabriel Valley
+        "pasadena", "south pasadena", "san marino", "altadena", "arcadia",
+        "monrovia", "duarte", "sierra madre", "temple city", "san gabriel",
+        "rosemead", "el monte", "south el monte", "baldwin park",
+        "west covina", "covina", "glendora", "azusa", "irwindale",
+        "la puente", "walnut", "diamond bar", "rowland heights",
+        "hacienda heights", "alhambra", "monterey park", "san dimas",
+        "claremont", "pomona", "la verne", "city of industry",
+        # San Fernando Valley
+        "burbank", "glendale", "san fernando", "calabasas", "agoura hills",
+        "hidden hills", "westlake village", "sherman oaks", "van nuys",
+        "encino", "tarzana", "woodland hills", "northridge", "granada hills",
+        "sylmar", "sun valley", "studio city", "valley village",
+        "panorama city", "mission hills", "pacoima", "arleta", "winnetka",
+        "canoga park", "chatsworth", "porter ranch", "lake balboa",
+        # Santa Clarita Valley / North LA County
+        "santa clarita", "valencia", "newhall", "saugus", "canyon country",
+        "stevenson ranch", "castaic", "agua dulce",
+        # Antelope Valley
+        "lancaster", "palmdale",
+        # Conejo Valley / east Ventura edge (commonly Greater LA)
+        "thousand oaks", "simi valley", "moorpark", "newbury park",
+        "oak park",
+        # Orange County (part of the LA-Long Beach-Anaheim MSA)
+        "anaheim", "anaheim hills", "santa ana", "irvine", "huntington beach",
+        "garden grove", "orange", "fullerton", "costa mesa", "mission viejo",
+        "newport beach", "tustin", "lake forest", "yorba linda",
+        "laguna niguel", "buena park", "fountain valley", "placentia",
+        "brea", "aliso viejo", "cypress", "la habra",
+        "rancho santa margarita", "san clemente", "laguna beach",
+        "dana point", "stanton", "los alamitos", "seal beach", "westminster"
     ],
     "orange county": [
         "santa ana", "anaheim", "irvine", "huntington beach", "garden grove",
