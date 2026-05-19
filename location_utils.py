@@ -99,35 +99,62 @@ REGION_MAPPINGS = {
         "tustin", "lake forest", "yorba linda", "laguna niguel"
     ],
     "greater seattle": [
-        # Seattle proper
-        "seattle",
+        # Seattle proper + commonly-listed neighborhoods
+        "seattle", "capitol hill", "ballard", "fremont", "queen anne",
+        "west seattle", "south lake union", "belltown", "georgetown",
+        "columbia city", "university district", "wallingford", "greenwood",
+        "magnolia", "beacon hill", "northgate", "ravenna", "green lake",
         # Eastside (King County)
         "bellevue", "redmond", "kirkland", "sammamish", "issaquah",
         "mercer island", "newcastle", "woodinville", "bothell", "kenmore",
         "lake forest park", "shoreline", "mountlake terrace", "brier",
+        "medina", "clyde hill", "hunts point", "yarrow point",
+        "beaux arts village", "snoqualmie", "north bend", "carnation",
+        "duvall", "fall city", "preston",
         # South King County
         "renton", "kent", "auburn", "federal way", "tukwila", "seatac",
         "burien", "des moines", "covington", "maple valley", "enumclaw",
+        "normandy park", "black diamond", "pacific", "algona", "white center",
+        "vashon", "vashon island", "ravensdale", "hobart",
         # North (Snohomish County)
         "everett", "lynnwood", "edmonds", "mukilteo", "mill creek",
         "marysville", "lake stevens", "snohomish", "monroe", "arlington",
+        "stanwood", "granite falls", "sultan", "gold bar", "darrington",
+        "woodway", "tulalip", "silver firs",
         # South Sound (Pierce County)
         "tacoma", "lakewood", "puyallup", "university place", "bonney lake",
         "sumner", "edgewood", "fife", "gig harbor", "dupont", "steilacoom",
+        "parkland", "spanaway", "graham", "frederickson", "south hill",
+        "milton", "orting", "buckley", "eatonville", "ruston", "fircrest",
         # West (Kitsap County - across Puget Sound)
-        "bremerton", "silverdale", "poulsbo", "port orchard", "bainbridge island"
+        "bremerton", "silverdale", "poulsbo", "port orchard",
+        "bainbridge island", "kingston", "suquamish", "manchester", "keyport"
     ],
     "seattle metro": [  # Alias
-        "seattle", "bellevue", "redmond", "kirkland", "sammamish", "issaquah",
+        "seattle", "capitol hill", "ballard", "fremont", "queen anne",
+        "west seattle", "south lake union", "belltown", "georgetown",
+        "columbia city", "university district", "wallingford", "greenwood",
+        "magnolia", "beacon hill", "northgate", "ravenna", "green lake",
+        "bellevue", "redmond", "kirkland", "sammamish", "issaquah",
         "mercer island", "newcastle", "woodinville", "bothell", "kenmore",
         "lake forest park", "shoreline", "mountlake terrace", "brier",
+        "medina", "clyde hill", "hunts point", "yarrow point",
+        "beaux arts village", "snoqualmie", "north bend", "carnation",
+        "duvall", "fall city", "preston",
         "renton", "kent", "auburn", "federal way", "tukwila", "seatac",
         "burien", "des moines", "covington", "maple valley", "enumclaw",
+        "normandy park", "black diamond", "pacific", "algona", "white center",
+        "vashon", "vashon island", "ravensdale", "hobart",
         "everett", "lynnwood", "edmonds", "mukilteo", "mill creek",
         "marysville", "lake stevens", "snohomish", "monroe", "arlington",
+        "stanwood", "granite falls", "sultan", "gold bar", "darrington",
+        "woodway", "tulalip", "silver firs",
         "tacoma", "lakewood", "puyallup", "university place", "bonney lake",
         "sumner", "edgewood", "fife", "gig harbor", "dupont", "steilacoom",
-        "bremerton", "silverdale", "poulsbo", "port orchard", "bainbridge island"
+        "parkland", "spanaway", "graham", "frederickson", "south hill",
+        "milton", "orting", "buckley", "eatonville", "ruston", "fircrest",
+        "bremerton", "silverdale", "poulsbo", "port orchard",
+        "bainbridge island", "kingston", "suquamish", "manchester", "keyport"
     ],
     "greater boston": [
         "boston", "cambridge", "somerville", "brookline", "newton", "quincy",
