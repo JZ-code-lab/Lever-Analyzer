@@ -819,8 +819,52 @@ if st.session_state.analysis_results:
     if not results:
         st.warning(f"No candidates found with score ≥ {st.session_state.minimum_score}. Try adjusting the minimum score filter.")
     else:
+        # Pagination: render at most PAGE_SIZE candidates at once so Streamlit
+        # doesn't choke trying to draw all of them (each candidate is many
+        # widgets — dropdowns, columns, highlighted resume HTML — and rendering
+        # 80+ at once hits the practical ceiling, leaving the page half-drawn).
+        PAGE_SIZE = 25
+        total_results = len(results)
+        total_pages = max(1, (total_results + PAGE_SIZE - 1) // PAGE_SIZE)
+        current_page = int(st.session_state.get("results_page", 1) or 1)
+        if current_page < 1:
+            current_page = 1
+        if current_page > total_pages:
+            current_page = total_pages
+
+        start_idx = (current_page - 1) * PAGE_SIZE
+        end_idx = min(start_idx + PAGE_SIZE, total_results)
+        page_results = results[start_idx:end_idx]
+
+        def _render_pagination_controls(suffix: str) -> None:
+            if total_pages <= 1:
+                return
+            pc1, pc2, pc3 = st.columns([1, 2, 1])
+            with pc1:
+                if st.button("← Previous", key=f"prev_page_{suffix}",
+                             use_container_width=True,
+                             disabled=current_page <= 1):
+                    st.session_state.results_page = current_page - 1
+                    st.rerun()
+            with pc2:
+                st.markdown(
+                    f"<div style='text-align:center; padding-top:0.5rem;'>"
+                    f"Page <b>{current_page}</b> of <b>{total_pages}</b> "
+                    f"&middot; showing #{start_idx + 1}–#{end_idx} of {total_results}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with pc3:
+                if st.button("Next →", key=f"next_page_{suffix}",
+                             use_container_width=True,
+                             disabled=current_page >= total_pages):
+                    st.session_state.results_page = current_page + 1
+                    st.rerun()
+
+        _render_pagination_controls("top")
+
         # Find original rank from all_results
-        for result in results:
+        for result in page_results:
             original_rank = all_results.index(result) + 1
             candidate = result["candidate"]
             analysis = result["analysis"]
@@ -1002,6 +1046,8 @@ if st.session_state.analysis_results:
                                 st.rerun()
                             except Exception as apply_err:
                                 st.error(f"Update failed: {apply_err}")
+
+        _render_pagination_controls("bottom")
 
 elif st.session_state.current_step == 1:
     col1, col2, col3 = st.columns([1, 3, 1])
