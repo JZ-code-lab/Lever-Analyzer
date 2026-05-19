@@ -98,6 +98,24 @@ REGION_MAPPINGS = {
         "orange", "fullerton", "costa mesa", "mission viejo", "newport beach",
         "tustin", "lake forest", "yorba linda", "laguna niguel"
     ],
+    "greater san diego": [
+        # Incorporated cities (San Diego County)
+        "san diego", "chula vista", "oceanside", "escondido", "carlsbad",
+        "el cajon", "vista", "san marcos", "encinitas", "national city",
+        "la mesa", "santee", "poway", "imperial beach", "lemon grove",
+        "coronado", "del mar", "solana beach",
+        # Major communities / commonly-listed neighborhoods
+        "la jolla", "pacific beach", "point loma", "ocean beach",
+        "mission valley", "mira mesa", "rancho bernardo",
+        "rancho penasquitos", "scripps ranch", "carmel valley",
+        "sorrento valley", "kearny mesa", "clairemont", "hillcrest",
+        "north park", "university city", "tierrasanta", "allied gardens",
+        "del cerro", "san carlos", "serra mesa", "linda vista",
+        "otay mesa", "san ysidro", "paradise hills", "spring valley",
+        "bonita", "lakeside", "alpine", "ramona", "fallbrook",
+        "valley center", "rancho santa fe", "casa de oro",
+        "rancho san diego"
+    ],
     "greater seattle": [
         # Seattle proper + commonly-listed neighborhoods
         "seattle", "capitol hill", "ballard", "fremont", "queen anne",
@@ -336,6 +354,7 @@ REGION_STATES = {
     "silicon valley": "CA",
     "greater los angeles": "CA",
     "orange county": "CA",
+    "greater san diego": "CA",
     "greater seattle": "WA",
     "seattle metro": "WA",
     "greater boston": "MA",
@@ -378,6 +397,10 @@ REGION_ALIASES = {
     # Orange County
     "greater orange county": "orange county",
     "orange county area": "orange county",
+    # Greater San Diego (canonical key is "greater san diego")
+    "san diego metro": "greater san diego",
+    "san diego area": "greater san diego",
+    "san diego county": "greater san diego",
     # Greater Seattle (keys "greater seattle"/"seattle metro" catch most)
     "seattle area": "greater seattle",
     "puget sound": "greater seattle",
