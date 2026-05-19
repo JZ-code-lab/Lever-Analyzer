@@ -356,37 +356,80 @@ REGION_STATES = {
 }
 
 
+# Natural-language phrasings -> canonical REGION_MAPPINGS key. Without these,
+# only the exact region key (or a string containing it) was recognized, so
+# "Los Angeles metro area" or "Greater Denver" silently matched nothing. Kept
+# specific enough not to collide as substrings of unrelated place names.
+REGION_ALIASES = {
+    # San Francisco Bay Area (the key "bay area" already catches "... bay area")
+    "sf bay area": "bay area",
+    "sf bay": "bay area",
+    "greater san francisco": "bay area",
+    "san francisco metro": "bay area",
+    "san francisco bay": "bay area",
+    # Greater Los Angeles
+    "los angeles metro": "greater los angeles",
+    "los angeles metro area": "greater los angeles",
+    "los angeles area": "greater los angeles",
+    "los angeles county": "greater los angeles",
+    "la metro area": "greater los angeles",
+    "la metro": "greater los angeles",
+    "la area": "greater los angeles",
+    # Orange County
+    "greater orange county": "orange county",
+    "orange county area": "orange county",
+    # Greater Seattle (keys "greater seattle"/"seattle metro" catch most)
+    "seattle area": "greater seattle",
+    "puget sound": "greater seattle",
+    # Greater Denver (canonical key is "denver metro")
+    "greater denver": "denver metro",
+    "denver area": "denver metro",
+    # Greater Austin (canonical key is "austin metro")
+    "greater austin": "austin metro",
+    "austin area": "austin metro",
+}
+
+
+def _resolve_region_key(location: str) -> Optional[str]:
+    """Resolve a free-text location to a canonical REGION_MAPPINGS key,
+    checking natural-language aliases first, then the region keys
+    themselves. Returns None if it is not a recognized region."""
+    location_lower = location.lower().strip()
+    for alias, canonical in REGION_ALIASES.items():
+        if alias in location_lower:
+            return canonical
+    for region_name in REGION_MAPPINGS:
+        if region_name in location_lower:
+            return region_name
+    return None
+
+
 def get_region_state(location: str) -> Optional[str]:
     """Return the US state abbreviation for a region filter, or None if the
     string is not a recognized single-state region."""
-    location_lower = location.lower().strip()
-    for region_name in REGION_MAPPINGS:
-        if region_name in location_lower:
-            return REGION_STATES.get(region_name)
-    return None
+    key = _resolve_region_key(location)
+    return REGION_STATES.get(key) if key else None
 
 
 def expand_region(location: str) -> list[str]:
     """
-    Expand a region name into its constituent cities, state-qualified when
-    the region belongs to a single state (so "Fairfax, CA" from the Bay Area
-    cannot match "Fairfax, VA").
+    Expand a region name (or a natural-language alias of one) into its
+    constituent cities, state-qualified when the region belongs to a single
+    state (so "Fairfax, CA" from the Bay Area cannot match "Fairfax, VA").
 
     Args:
-        location: Location string that might be a region name
+        location: Location string that might be a region name/alias
 
     Returns:
         List of cities in the region, or [location] if not a recognized region
     """
-    location_lower = location.lower().strip()
-
-    # Check if this is a known region
-    for region_name, cities in REGION_MAPPINGS.items():
-        if region_name in location_lower:
-            state = REGION_STATES.get(region_name)
-            if state:
-                return [f"{c}, {state}" for c in cities]
-            return list(cities)
+    key = _resolve_region_key(location)
+    if key:
+        cities = REGION_MAPPINGS[key]
+        state = REGION_STATES.get(key)
+        if state:
+            return [f"{c}, {state}" for c in cities]
+        return list(cities)
 
     # Not a region, return as-is
     return [location]
