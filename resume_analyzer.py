@@ -132,6 +132,15 @@ def analyze_single_resume(resume_text: str, job_description: Optional[str], weig
             "- If flagged, set \"has_disqualifier\": true and \"disqualifier_reason\": <exact disqualifier text> + (<short evidence from resume>). "
             "Otherwise set \"has_disqualifier\": false.\n"
             "- DO NOT require certainty. Reasonable inference from the resume is enough.\n"
+            "\n*** CONSISTENCY CHECK — APPLY BEFORE RETURNING JSON ***\n"
+            "After drafting your weaknesses and summary, scan them. If any weakness, concern, or sentence in your summary "
+            "describes the candidate as meeting a disqualifier from the list above — even paraphrased (e.g. \"worked in India "
+            "in the past 6 years\" for an India disqualifier, or noting the role as a disqualifying factor) — then has_disqualifier "
+            "in your JSON MUST be true and disqualifier_reason MUST cite the matching disqualifier.\n"
+            "It is an INVALID response to write about a disqualifier match in your prose while leaving has_disqualifier as false. "
+            "If you describe the candidate as meeting a disqualifier, you must flag them. If you do not flag them, you must not "
+            "describe them as meeting a disqualifier. These two parts of your output MUST agree.\n"
+            "*** END CONSISTENCY CHECK ***\n"
         )
 
     # Build detailed requirements scoring instructions
@@ -326,6 +335,31 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
             result["overall_score"] = 0
             if not result.get("disqualifier_reason"):
                 result["disqualifier_reason"] = "Matched a disqualifier"
+
+        # Safety net: the LLM sometimes describes a disqualifier match in its
+        # weakness bullets but forgets to set has_disqualifier=true in the
+        # JSON, leaving the candidate with a real score. If we see the word
+        # "disqualif" anywhere in the weaknesses, or a disqualifier_reason
+        # is populated but the flag isn't, force the flag and zero the score.
+        if active_disqualifiers and not result.get("has_disqualifier"):
+            weakness_parts = []
+            for w in (result.get("weaknesses") or []):
+                if isinstance(w, str):
+                    weakness_parts.append(w)
+                elif isinstance(w, dict):
+                    weakness_parts.append(str(w.get("text", w.get("description", ""))))
+                else:
+                    weakness_parts.append(str(w))
+            weakness_blob = " ".join(weakness_parts).lower()
+            has_reason = bool(str(result.get("disqualifier_reason") or "").strip())
+            if "disqualif" in weakness_blob or has_reason:
+                result["has_disqualifier"] = True
+                result["overall_score"] = 0
+                if not result.get("disqualifier_reason"):
+                    result["disqualifier_reason"] = (
+                        "Disqualifier identified in analysis (auto-detected: the analysis "
+                        "described a disqualifying factor but did not set the flag)"
+                    )
 
         return result
     except:
