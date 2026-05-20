@@ -272,7 +272,7 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
             model="o4-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            reasoning_effort="medium",
+            reasoning_effort="high",
         )
         return response.choices[0].message.content or "{}"
     
