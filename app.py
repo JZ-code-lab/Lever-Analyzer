@@ -401,10 +401,14 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**Applied on or after** (Optional)")
-    st.caption("Only analyze candidates whose application date is on or after this date. Leave blank to include all.")
+    st.markdown("**In current stage since** (Optional)")
+    st.caption(
+        "Only analyze candidates whose most recent stage change is on or after this date. "
+        "Captures new applicants AND candidates moved into a stage from another role. "
+        "Leave blank to include all."
+    )
     st.date_input(
-        "Applied since",
+        "In current stage since",
         value=None,
         key="applied_since_date",
         label_visibility="collapsed",
@@ -1336,18 +1340,27 @@ elif st.session_state.current_step == 2:
 
             candidates = stage_filtered
 
-            # Optional "applied on or after" date filter: drop candidates whose
-            # Lever createdAt (Unix ms) is strictly before the chosen date's
-            # start-of-day in UTC. Inclusive on the chosen date.
+            # Optional "in current stage since" date filter: drop candidates
+            # whose most recent stage change (Lever's lastAdvancedAt, Unix ms)
+            # is strictly before the chosen date's start-of-day UTC. Falls
+            # back to createdAt for candidates that have never been advanced.
+            # Inclusive on the chosen date. Captures both new applicants and
+            # candidates moved into the stage from another role.
             applied_since = st.session_state.get("applied_since_date")
             if applied_since:
                 from datetime import datetime as _dt, timezone as _tz
                 cutoff_ms = int(_dt.combine(applied_since, _dt.min.time(), tzinfo=_tz.utc).timestamp() * 1000)
                 before_count = len(candidates)
-                candidates = [c for c in candidates if (c.get("createdAt") or 0) >= cutoff_ms]
+                candidates = [
+                    c for c in candidates
+                    if (c.get("lastAdvancedAt") or c.get("createdAt") or 0) >= cutoff_ms
+                ]
                 excluded = before_count - len(candidates)
                 if excluded > 0:
-                    st.info(f"Date filter: excluded {excluded} candidate{'s' if excluded != 1 else ''} who applied before {applied_since.isoformat()}.")
+                    st.info(
+                        f"Date filter: excluded {excluded} candidate{'s' if excluded != 1 else ''} "
+                        f"whose most recent stage change was before {applied_since.isoformat()}."
+                    )
 
             # Show deduplication results if duplicates were found
             duplicates_removed = len(all_candidates) - len(candidates)
