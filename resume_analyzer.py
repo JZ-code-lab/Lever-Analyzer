@@ -319,10 +319,10 @@ IMPORTANT: Your requirement_scores must add up to the overall_score. Score stric
         # better than gpt-4o. Note: reasoning models don't accept the
         # `temperature` parameter and instead use a fixed sampling strategy.
         response = openai_client.chat.completions.create(
-            model="o4-mini",
+            model="o3",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            reasoning_effort="high",
+            reasoning_effort="medium",
         )
         return response.choices[0].message.content or "{}"
     
