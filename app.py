@@ -368,6 +368,7 @@ with st.sidebar:
         st.session_state.disqualifiers = default_disqualifiers()
         st.session_state.require_hands_on_coding = False
         st.session_state.recent_stage_changes = {}
+        st.session_state.pop("applied_since_date", None)
         clear_session_cache()
         st.rerun()
 
@@ -397,6 +398,16 @@ with st.sidebar:
         "Strong indication of recent hands-on coding skills",
         value=st.session_state.require_hands_on_coding,
         help="When checked, analyzes candidates for GitHub activity, technical content creation (articles, videos, podcasts, talks), and hands-on coding evidence. Uses job requirements to determine relevance."
+    )
+
+    st.markdown("---")
+    st.markdown("**Applied on or after** (Optional)")
+    st.caption("Only analyze candidates whose application date is on or after this date. Leave blank to include all.")
+    st.date_input(
+        "Applied since",
+        value=None,
+        key="applied_since_date",
+        label_visibility="collapsed",
     )
 
     st.markdown("---")
@@ -516,6 +527,7 @@ if st.session_state.analysis_results:
             st.session_state.disqualifiers = default_disqualifiers()
             st.session_state.require_hands_on_coding = False
             st.session_state.recent_stage_changes = {}
+            st.session_state.pop("applied_since_date", None)
             clear_session_cache()
             st.rerun()
 
@@ -1323,6 +1335,19 @@ elif st.session_state.current_step == 2:
                     stage_filtered.append(c)
 
             candidates = stage_filtered
+
+            # Optional "applied on or after" date filter: drop candidates whose
+            # Lever createdAt (Unix ms) is strictly before the chosen date's
+            # start-of-day in UTC. Inclusive on the chosen date.
+            applied_since = st.session_state.get("applied_since_date")
+            if applied_since:
+                from datetime import datetime as _dt, timezone as _tz
+                cutoff_ms = int(_dt.combine(applied_since, _dt.min.time(), tzinfo=_tz.utc).timestamp() * 1000)
+                before_count = len(candidates)
+                candidates = [c for c in candidates if (c.get("createdAt") or 0) >= cutoff_ms]
+                excluded = before_count - len(candidates)
+                if excluded > 0:
+                    st.info(f"Date filter: excluded {excluded} candidate{'s' if excluded != 1 else ''} who applied before {applied_since.isoformat()}.")
 
             # Show deduplication results if duplicates were found
             duplicates_removed = len(all_candidates) - len(candidates)
