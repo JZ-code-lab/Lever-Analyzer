@@ -354,6 +354,7 @@ with st.sidebar:
         st.session_state.analysis_results = None
         st.session_state.current_step = 1
         st.session_state.selected_postings = []
+        st.session_state.pop("posting_multiselect", None)
         st.session_state.minimum_score = 0
         st.session_state.job_description = ""
         st.session_state.requirements = [
@@ -517,6 +518,7 @@ if st.session_state.analysis_results:
             st.session_state.analysis_results = None
             st.session_state.current_step = 1
             st.session_state.selected_postings = []
+            st.session_state.pop("posting_multiselect", None)
             st.session_state.minimum_score = 0
             st.session_state.job_description = ""
             st.session_state.requirements = [
@@ -1097,22 +1099,41 @@ elif st.session_state.current_step == 1:
                 for p in postings
             }
 
-            # Preserve previously selected postings across reruns
-            default_selections = [
-                key for key, posting in posting_options.items()
-                if posting.get('id') in [p.get('id') for p in st.session_state.selected_postings]
-            ]
+            # Bug fix: previously passed `default=...` with no `key=`, which
+            # makes Streamlit re-apply the default on every rerun and wipes
+            # the user's click. The correct pattern is to give the widget a
+            # `key` and manage its value through session_state directly.
+            ms_key = "posting_multiselect"
+            if ms_key not in st.session_state:
+                # First render: seed from any existing selected_postings (e.g.
+                # after a session restore from /tmp).
+                st.session_state[ms_key] = [
+                    label for label, posting in posting_options.items()
+                    if posting.get('id') in [p.get('id') for p in st.session_state.selected_postings]
+                ]
+            else:
+                # Postings can be refreshed; prune any stale selections whose
+                # label no longer exists in the current options.
+                st.session_state[ms_key] = [
+                    v for v in st.session_state[ms_key] if v in posting_options
+                ]
 
             selected_options = st.multiselect(
                 "Search and select positions",
                 options=list(posting_options.keys()),
-                default=default_selections,
+                key=ms_key,
                 help="Select one or more positions to analyze candidates across multiple roles",
                 placeholder="Type to search and select positions..."
             )
-            
+
+            # Always keep selected_postings in lockstep with the widget — this
+            # also correctly handles deselecting all (previous logic only
+            # updated selected_postings when something was selected).
+            st.session_state.selected_postings = [
+                posting_options[opt] for opt in selected_options if opt in posting_options
+            ]
+
             if selected_options:
-                st.session_state.selected_postings = [posting_options[opt] for opt in selected_options]
                 
                 st.markdown("---")
                 st.markdown(f"**Selected Positions ({len(selected_options)}):**")
