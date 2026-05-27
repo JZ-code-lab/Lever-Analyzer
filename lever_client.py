@@ -507,6 +507,22 @@ def get_candidate_lever_url(candidate: dict) -> str:
     return f"https://hire.lever.co/candidates/{opportunity_id}"
 
 
+def get_candidate_contact_id(candidate: dict) -> Optional[str]:
+    """Return the Lever Contact (person) ID — same across every opportunity
+    the person has, so it's the right identity key for cross-posting dedup.
+
+    With expand=contact, candidate["contact"] is a dict with an "id" field.
+    Without expansion, it's a bare ID string. Returns None if neither is
+    available (rare; falls back to email/name in the dedup caller).
+    """
+    contact = candidate.get("contact")
+    if isinstance(contact, dict):
+        return contact.get("id")
+    if isinstance(contact, str) and contact.strip():
+        return contact.strip()
+    return None
+
+
 def get_candidate_name(candidate: dict) -> str:
     """Get the candidate's name."""
     return candidate.get("name", "Unknown Candidate")

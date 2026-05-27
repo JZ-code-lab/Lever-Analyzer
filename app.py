@@ -12,7 +12,8 @@ from lever_client import (
     get_candidate_name,
     get_candidate_email,
     get_candidate_linkedin,
-    get_candidate_lever_url
+    get_candidate_lever_url,
+    get_candidate_contact_id
 )
 from resume_analyzer import analyze_candidates_batch
 from location_utils import filter_candidates_with_resumes_by_location, filter_candidates_by_location_fast
@@ -1308,19 +1309,40 @@ elif st.session_state.current_step == 2:
                     except Exception as e:
                         st.warning(f"Failed to fetch candidates for {posting.get('text', 'Unknown')}: {str(e)}")
 
-            # Deduplicate candidates based on lever profile link and email
+            # Deduplicate candidates by Lever Contact (person), so the same
+            # person across multiple postings is analyzed once. The previous
+            # implementation keyed on the opportunity URL, which is unique per
+            # role application — so a candidate who applied to 10 postings
+            # was never deduped. Contact ID (from expand=contact) is the same
+            # across all of a person's opportunities, so it's the right key.
+            # Falls back to email, then name, then the opportunity URL if the
+            # higher-quality identifiers are unavailable.
             seen_candidates = {}
+            pre_dedup_count = len(all_candidates)
             for candidate in all_candidates:
-                lever_url = get_candidate_lever_url(candidate)
-                email = get_candidate_email(candidate)
-
-                # Create unique key from lever URL (primary) and email (secondary)
-                unique_key = (lever_url, email)
-
+                contact_id = get_candidate_contact_id(candidate)
+                if contact_id:
+                    unique_key = ("contact", contact_id)
+                else:
+                    email = (get_candidate_email(candidate) or "").lower().strip()
+                    if email:
+                        unique_key = ("email", email)
+                    else:
+                        name = get_candidate_name(candidate).lower().strip()
+                        if name and name != "unknown candidate":
+                            unique_key = ("name", name)
+                        else:
+                            unique_key = ("opp", get_candidate_lever_url(candidate))
                 if unique_key not in seen_candidates:
                     seen_candidates[unique_key] = candidate
 
             candidates = list(seen_candidates.values())
+            dedup_removed = pre_dedup_count - len(candidates)
+            if dedup_removed > 0:
+                st.info(
+                    f"Removed {dedup_removed} duplicate candidate{'s' if dedup_removed != 1 else ''} "
+                    f"(same person across multiple postings)."
+                )
 
             # Filter by stage: archived candidates kept iff "archive" is checked;
             # active candidates kept iff their stage matches one of the checked stages.
@@ -1362,10 +1384,7 @@ elif st.session_state.current_step == 2:
                         f"whose most recent stage change was before {applied_since.isoformat()}."
                     )
 
-            # Show deduplication results if duplicates were found
-            duplicates_removed = len(all_candidates) - len(candidates)
-            if duplicates_removed > 0:
-                st.info(f"Removed {duplicates_removed} duplicate or out-of-stage candidate{'s' if duplicates_removed != 1 else ''}")
+            # (Dedup count + date-filter count are already reported above.)
 
             # Show status of candidate fetching
             selected_stages_summary = ", ".join([s for s in STAGE_FILTER_OPTIONS if stage_filters.get(s, False)])
