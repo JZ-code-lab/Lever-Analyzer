@@ -1330,40 +1330,66 @@ elif st.session_state.current_step == 2:
                     except Exception as e:
                         st.warning(f"Failed to fetch candidates for {posting.get('text', 'Unknown')}: {str(e)}")
 
-            # Deduplicate candidates by Lever Contact (person), so the same
-            # person across multiple postings is analyzed once. The previous
-            # implementation keyed on the opportunity URL, which is unique per
-            # role application — so a candidate who applied to 10 postings
-            # was never deduped. Contact ID (from expand=contact) is the same
-            # across all of a person's opportunities, so it's the right key.
-            # Falls back to email, then name, then the opportunity URL if the
-            # higher-quality identifiers are unavailable.
-            seen_candidates = {}
+            # Deduplicate carefully:
+            #   * Always drop exact duplicate opportunities (same opportunity_id
+            #     returned twice) — defends against any Lever API quirks.
+            #   * When the user selected MULTIPLE postings, ALSO dedupe by
+            #     Contact ID so the same person across postings is analyzed
+            #     once (the original cross-posting use case).
+            #   * For a SINGLE posting we deliberately KEEP distinct
+            #     opportunities even if they belong to the same person — e.g.
+            #     a candidate with an archived application from an earlier
+            #     rejection AND a new active application has two genuinely
+            #     distinct opportunities on this posting, and both should be
+            #     surfaced. Collapsing them into one was the overcorrection.
+            multi_posting = len(st.session_state.selected_postings) > 1
+            seen_keys = set()
+            seen_opp_ids = set()
+            deduped = []
             pre_dedup_count = len(all_candidates)
             for candidate in all_candidates:
-                contact_id = get_candidate_contact_id(candidate)
-                if contact_id:
-                    unique_key = ("contact", contact_id)
-                else:
-                    email = (get_candidate_email(candidate) or "").lower().strip()
-                    if email:
-                        unique_key = ("email", email)
-                    else:
-                        name = get_candidate_name(candidate).lower().strip()
-                        if name and name != "unknown candidate":
-                            unique_key = ("name", name)
-                        else:
-                            unique_key = ("opp", get_candidate_lever_url(candidate))
-                if unique_key not in seen_candidates:
-                    seen_candidates[unique_key] = candidate
+                opp_id = candidate.get("id")
+                # Drop exact opportunity-level duplicates always.
+                if opp_id:
+                    if opp_id in seen_opp_ids:
+                        continue
+                    seen_opp_ids.add(opp_id)
 
-            candidates = list(seen_candidates.values())
+                if multi_posting:
+                    # Cross-posting person dedup: collapse same person across
+                    # different postings to one analysis.
+                    contact_id = get_candidate_contact_id(candidate)
+                    if contact_id:
+                        key = ("contact", contact_id)
+                    else:
+                        email = (get_candidate_email(candidate) or "").lower().strip()
+                        if email:
+                            key = ("email", email)
+                        else:
+                            name = get_candidate_name(candidate).lower().strip()
+                            if name and name != "unknown candidate":
+                                key = ("name", name)
+                            else:
+                                key = ("opp", opp_id or get_candidate_lever_url(candidate))
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+
+                deduped.append(candidate)
+
+            candidates = deduped
             dedup_removed = pre_dedup_count - len(candidates)
             if dedup_removed > 0:
-                st.info(
-                    f"Removed {dedup_removed} duplicate candidate{'s' if dedup_removed != 1 else ''} "
-                    f"(same person across multiple postings)."
-                )
+                if multi_posting:
+                    st.info(
+                        f"Removed {dedup_removed} duplicate candidate{'s' if dedup_removed != 1 else ''} "
+                        f"(same person across multiple postings)."
+                    )
+                else:
+                    st.info(
+                        f"Removed {dedup_removed} duplicate opportunit"
+                        f"{'ies' if dedup_removed != 1 else 'y'} returned by Lever."
+                    )
 
             # Filter by stage: archived candidates kept iff "archive" is checked;
             # active candidates kept iff their stage matches one of the checked stages.
