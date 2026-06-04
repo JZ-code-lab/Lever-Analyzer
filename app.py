@@ -1477,6 +1477,7 @@ elif st.session_state.current_step == 2:
                 st.info(f"Fetching resumes for {len(candidates_to_fetch)} candidate{'s' if len(candidates_to_fetch) != 1 else ''}...")
 
                 candidates_with_resumes = []
+                resume_fetch_failures = []  # list of (candidate_name, posting_name)
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
@@ -1490,11 +1491,35 @@ elif st.session_state.current_step == 2:
                             "candidate": candidate,
                             "resume_text": resume_text
                         })
+                    else:
+                        resume_fetch_failures.append(
+                            (get_candidate_name(candidate), candidate.get("_posting_name", ""))
+                        )
 
                     progress_bar.progress((i + 1) / len(candidates_to_fetch))
 
                 progress_bar.empty()
                 status_text.empty()
+
+                # Surface the silent cull at the resume-parse step. Previously
+                # candidates whose resume couldn't be parsed (scanned PDFs where
+                # vision OCR failed, broken Lever URLs, legacy .doc on a host
+                # without antiword, etc.) were dropped with no message and the
+                # user couldn't tell where the count went.
+                if resume_fetch_failures:
+                    fail_count = len(resume_fetch_failures)
+                    total = len(candidates_to_fetch)
+                    st.warning(
+                        f"⚠️ Could not parse a resume for {fail_count} of {total} candidate"
+                        f"{'s' if fail_count != 1 else ''} — they will be EXCLUDED from the "
+                        f"analysis. Possible causes: scanned/image PDFs where OCR failed, "
+                        f"unsupported formats (legacy .doc), or broken Lever file URLs."
+                    )
+                    with st.expander(f"Show the {fail_count} excluded candidate{'s' if fail_count != 1 else ''}", expanded=False):
+                        for fname, fposting in resume_fetch_failures[:200]:
+                            st.caption(f"• {fname}" + (f"  —  {fposting}" if fposting else ""))
+                        if fail_count > 200:
+                            st.caption(f"…and {fail_count - 200} more.")
 
                 if not candidates_with_resumes:
                     st.warning("No resumes found for any candidates.")
