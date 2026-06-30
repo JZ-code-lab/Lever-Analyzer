@@ -55,6 +55,12 @@ import time
 SESSION_CACHE_PATH = "/tmp/lever_analyzer_session.json"
 SESSION_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60  # one week
 
+# Snapshot of the full candidate list (with resume_text) for a run-in-progress.
+# Persisted once at the start of analysis so that if the Streamlit session
+# dies mid-run, the page reload can offer to resume the unfinished candidates
+# instead of re-fetching from Lever and re-running the completed ones.
+PENDING_ANALYSIS_PATH = "/tmp/lever_analyzer_pending.json"
+
 PERSISTED_KEYS = [
     "analysis_results",
     "selected_postings",
@@ -108,6 +114,36 @@ def clear_session_cache() -> None:
             os.remove(SESSION_CACHE_PATH)
     except Exception as e:
         print(f"Failed to clear session cache: {e}")
+
+
+def save_pending_analysis(candidates_with_resumes: list) -> None:
+    """Persist the full candidate list (with resume_text) intended for analysis.
+    Read on reload to compute what's left if a run was interrupted.
+    """
+    try:
+        with open(PENDING_ANALYSIS_PATH, "w") as f:
+            json.dump(candidates_with_resumes, f)
+    except Exception as e:
+        print(f"Failed to save pending analysis: {e}")
+
+
+def load_pending_analysis() -> list | None:
+    try:
+        if not os.path.exists(PENDING_ANALYSIS_PATH):
+            return None
+        with open(PENDING_ANALYSIS_PATH, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Failed to load pending analysis: {e}")
+        return None
+
+
+def clear_pending_analysis() -> None:
+    try:
+        if os.path.exists(PENDING_ANALYSIS_PATH):
+            os.remove(PENDING_ANALYSIS_PATH)
+    except Exception as e:
+        print(f"Failed to clear pending analysis: {e}")
 
 
 def get_lever_stages() -> list:
@@ -373,6 +409,7 @@ with st.sidebar:
         st.session_state.recent_stage_changes = {}
         st.session_state.pop("applied_since_date", None)
         clear_session_cache()
+        clear_pending_analysis()
         st.rerun()
 
     # Reload Page — clean re-sync with the server when the browser view
@@ -504,6 +541,118 @@ with st.sidebar:
             st.info(f"Showing scores ≥ {st.session_state.minimum_score}")
 
 if st.session_state.analysis_results:
+    # ----- Resume an interrupted analysis -----
+    # If pending_analysis.json exists, the previous run didn't finish (the
+    # Streamlit session was killed mid-batch — backgrounded tab, idle WS,
+    # Render proxy timeout, etc.). Compute what's left and offer a one-click
+    # resume that picks up exactly where it stopped — no Lever re-fetch, no
+    # duplicate OpenAI cost on completed candidates.
+    _pending = load_pending_analysis()
+    _remaining_to_analyze = []
+    if _pending:
+        _completed_ids = {
+            (r.get("candidate") or {}).get("id")
+            for r in st.session_state.analysis_results
+            if isinstance(r, dict) and r.get("candidate")
+        }
+        _remaining_to_analyze = [
+            item for item in _pending
+            if isinstance(item, dict)
+            and (item.get("candidate") or {}).get("id")
+            and (item.get("candidate") or {}).get("id") not in _completed_ids
+        ]
+        if not _remaining_to_analyze:
+            # All candidates from the previous batch have been analyzed —
+            # pending file is stale, clean it up.
+            clear_pending_analysis()
+
+    if _remaining_to_analyze:
+        _total_pending = len(_pending)
+        _completed_n = _total_pending - len(_remaining_to_analyze)
+        st.warning(
+            f"⚠️ A previous analysis was interrupted at {_completed_n} of {_total_pending} candidates. "
+            f"Click Resume to finish the remaining {len(_remaining_to_analyze)} — no re-fetch needed."
+        )
+        _resume_col1, _resume_col2, _resume_spacer = st.columns([1, 1, 2])
+
+        with _resume_col1:
+            if st.button(
+                f"▶️ Resume Analysis ({len(_remaining_to_analyze)} remaining)",
+                type="primary",
+                use_container_width=True,
+                key="resume_analysis_btn",
+            ):
+                _existing_results = list(st.session_state.analysis_results or [])
+
+                st.info(f"Resuming analysis on {len(_remaining_to_analyze)} remaining candidates...")
+                _resume_progress = st.progress(0)
+                _resume_status = st.empty()
+
+                def _update_resume_progress(completed, total):
+                    _resume_progress.progress(completed / total)
+                    _resume_status.text(f"Analyzed {completed}/{total} remaining candidates")
+
+                def _save_resume_partial(partial_results):
+                    merged = _existing_results + partial_results
+                    ranked = sorted(
+                        merged,
+                        key=lambda x: x["analysis"].get("overall_score", 0),
+                        reverse=True,
+                    )
+                    st.session_state.analysis_results = ranked
+                    save_session_state()
+
+                _valid_requirements = [
+                    r for r in st.session_state.requirements
+                    if r.get("requirement", "").strip()
+                ]
+                _active_disqualifiers = [
+                    d["text"].strip() for d in st.session_state.disqualifiers
+                    if d.get("text", "").strip()
+                ]
+
+                try:
+                    _new_results = analyze_candidates_batch(
+                        candidates_with_resumes=_remaining_to_analyze,
+                        job_description=st.session_state.job_description if st.session_state.job_description.strip() else None,
+                        weighted_requirements=_valid_requirements,
+                        jd_weight=st.session_state.jd_weight,
+                        require_hands_on_coding=st.session_state.require_hands_on_coding,
+                        progress_callback=_update_resume_progress,
+                        disqualifiers=_active_disqualifiers,
+                        partial_callback=_save_resume_partial,
+                    )
+
+                    _combined = _existing_results + _new_results
+                    _combined.sort(
+                        key=lambda x: x["analysis"].get("overall_score", 0),
+                        reverse=True,
+                    )
+                    st.session_state.analysis_results = _combined
+                    save_session_state()
+                    clear_pending_analysis()
+                    _resume_progress.empty()
+                    _resume_status.empty()
+                    st.rerun()
+                except Exception as e:
+                    _resume_progress.empty()
+                    _resume_status.empty()
+                    st.error(f"Error resuming analysis: {str(e)}")
+                    raise
+
+        with _resume_col2:
+            if st.button(
+                "✕ Discard Remaining",
+                type="secondary",
+                use_container_width=True,
+                key="discard_pending_btn",
+                help="Forget the unfinished candidates and keep only what's already analyzed.",
+            ):
+                clear_pending_analysis()
+                st.rerun()
+
+        st.markdown("---")
+
     col_btn1, col_btn2, col_spacer = st.columns([1, 1, 2])
 
     with col_btn1:
@@ -511,6 +660,7 @@ if st.session_state.analysis_results:
             st.session_state.analysis_results = None
             st.session_state.current_step = 2
             st.session_state.minimum_score = 0
+            clear_pending_analysis()
             st.rerun()
 
     with col_btn2:
@@ -537,6 +687,7 @@ if st.session_state.analysis_results:
             st.session_state.recent_stage_changes = {}
             st.session_state.pop("applied_since_date", None)
             clear_session_cache()
+            clear_pending_analysis()
             st.rerun()
 
     st.header("📈 Candidate Rankings")
@@ -1571,6 +1722,12 @@ elif st.session_state.current_step == 2:
                             st.session_state.analysis_results = ranked
                             save_session_state()
 
+                        # Persist the full intended batch BEFORE kicking off
+                        # analysis. If the Streamlit session dies mid-run, the
+                        # reload path uses this file to offer a Resume button
+                        # for whatever didn't finish.
+                        save_pending_analysis(candidates_with_resumes)
+
                         try:
                             results = analyze_candidates_batch(
                                 candidates_with_resumes=candidates_with_resumes,
@@ -1594,6 +1751,7 @@ elif st.session_state.current_step == 2:
 
                             st.session_state.analysis_results = results
                             save_session_state()
+                            clear_pending_analysis()
                             analysis_progress.empty()
                             analysis_status.empty()
                             st.rerun()
